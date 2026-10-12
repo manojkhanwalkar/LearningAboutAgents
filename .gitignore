@@ -1,0 +1,23 @@
+# Maven
+target/
+dependency-reduced-pom.xml
+!.mvn/wrapper/maven-wrapper.jar
+
+# IntelliJ IDEA
+.idea/
+*.iml
+out/
+
+# VS Code / Eclipse
+.vscode/
+.classpath
+.project
+.settings/
+
+# OS / misc
+.DS_Store
+*.log
+*.swp
+
+# Local secrets
+.env
