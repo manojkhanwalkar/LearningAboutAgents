@@ -54,6 +54,7 @@ src/main/java/com/learning/agents/
   tools/                     # LangChain4j AI Services + @Tool examples
   graph/                     # LangGraph4j StateGraph workflows
 src/test/java/...            # tests mirror main packages
+.claude/skills/              # Claude Code skills (e.g. new-agent-example scaffolds a new sample)
 ```
 
 ## Conventions
