@@ -89,6 +89,15 @@ class ReActAgentGraphTest {
     }
 
     @Test
+    void calculateRejectsOutOfRangeInsteadOfMisreporting() {
+        String huge = "9".repeat(400);
+        assertEquals("Error: number is out of range", ReActTools.calculate(huge + " + 1"));
+        String big = "1" + "0".repeat(300);
+        assertEquals("Error: result is out of range", ReActTools.calculate(big + " * " + big));
+        assertEquals("100000000000000000000", ReActTools.calculate("10000000000 * 10000000000"));
+    }
+
+    @Test
     void lookupFindsFactsCaseInsensitively() {
         assertTrue(ReActTools.lookup("EIFFEL TOWER height").contains("330"));
         assertTrue(ReActTools.lookup("Atlantis").startsWith("No fact found"));

@@ -1,5 +1,6 @@
 package com.learning.agents.graph;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -55,6 +56,9 @@ public final class ReActTools {
         }
         double a = Double.parseDouble(m.group(1));
         double b = Double.parseDouble(m.group(3));
+        if (!Double.isFinite(a) || !Double.isFinite(b)) {
+            return "Error: number is out of range";
+        }
         if (m.group(2).equals("/") && b == 0) {
             return "Error: division by zero";
         }
@@ -64,8 +68,13 @@ public final class ReActTools {
             case "*" -> a * b;
             default -> a / b;
         };
-        return result == Math.rint(result)
-                ? String.valueOf((long) result)
-                : String.format(Locale.ROOT, "%.4f", result);
+        if (!Double.isFinite(result)) {
+            return "Error: result is out of range";
+        }
+        if (result == Math.rint(result)) {
+            // Exact for any magnitude; a (long) cast would silently clamp values beyond Long.MAX_VALUE.
+            return new BigDecimal(result).toPlainString();
+        }
+        return String.format(Locale.ROOT, "%.4f", result);
     }
 }
