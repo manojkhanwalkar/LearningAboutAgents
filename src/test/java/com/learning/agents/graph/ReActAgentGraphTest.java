@@ -91,10 +91,19 @@ class ReActAgentGraphTest {
     @Test
     void calculateRejectsOutOfRangeInsteadOfMisreporting() {
         String huge = "9".repeat(400);
-        assertEquals("Error: number is out of range", ReActTools.calculate(huge + " + 1"));
-        String big = "1" + "0".repeat(300);
-        assertEquals("Error: result is out of range", ReActTools.calculate(big + " * " + big));
+        assertTrue(ReActTools.calculate(huge + " + 1").startsWith("Error: number is out of range"));
+        String tiny = "0." + "0".repeat(400) + "1";
+        assertTrue(ReActTools.calculate("5 / " + tiny).startsWith("Error: number is out of range"));
+    }
+
+    @Test
+    void calculateIsExactBeyondDoublePrecision() {
         assertEquals("100000000000000000000", ReActTools.calculate("10000000000 * 10000000000"));
+        assertEquals("100000000000000000000000", ReActTools.calculate("100000000000 * 1000000000000"));
+        assertEquals("9007199254740993", ReActTools.calculate("9007199254740993 + 0"));
+        assertEquals("0.3000", ReActTools.calculate("0.1 + 0.2"));
+        assertEquals("0", ReActTools.calculate("-0 * 5"));
+        assertEquals("3", ReActTools.calculate("1.5 * 2"));
     }
 
     @Test

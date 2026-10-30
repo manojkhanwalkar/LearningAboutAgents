@@ -1,6 +1,8 @@
 package com.learning.agents.graph;
 
 import java.math.BigDecimal;
+import java.math.MathContext;
+import java.math.RoundingMode;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -29,6 +31,9 @@ public final class ReActTools {
     private static final Pattern BINARY_EXPR =
             Pattern.compile("^\\s*(-?\\d+(?:\\.\\d+)?)\\s*([+\\-*/])\\s*(-?\\d+(?:\\.\\d+)?)\\s*$");
 
+    /** Longest operand accepted, so results stay short enough to hand back to the model. */
+    static final int MAX_DIGITS = 30;
+
     private ReActTools() {
     }
 
@@ -54,27 +59,29 @@ public final class ReActTools {
         if (!m.matches()) {
             return "Error: expected '<number> <op> <number>', got \"%s\"".formatted(expression);
         }
-        double a = Double.parseDouble(m.group(1));
-        double b = Double.parseDouble(m.group(3));
-        if (!Double.isFinite(a) || !Double.isFinite(b)) {
-            return "Error: number is out of range";
+        if (digits(m.group(1)) > MAX_DIGITS || digits(m.group(3)) > MAX_DIGITS) {
+            return "Error: number is out of range (at most %d digits)".formatted(MAX_DIGITS);
         }
-        if (m.group(2).equals("/") && b == 0) {
+        // Decimal arithmetic, so results are exact (or correctly rounded for division) at any magnitude
+        // the digit limit allows, with no silent overflow, underflow or binary rounding.
+        BigDecimal a = new BigDecimal(m.group(1));
+        BigDecimal b = new BigDecimal(m.group(3));
+        if (m.group(2).equals("/") && b.signum() == 0) {
             return "Error: division by zero";
         }
-        double result = switch (m.group(2)) {
-            case "+" -> a + b;
-            case "-" -> a - b;
-            case "*" -> a * b;
-            default -> a / b;
+        BigDecimal result = switch (m.group(2)) {
+            case "+" -> a.add(b);
+            case "-" -> a.subtract(b);
+            case "*" -> a.multiply(b);
+            default -> a.divide(b, MathContext.DECIMAL128);
         };
-        if (!Double.isFinite(result)) {
-            return "Error: result is out of range";
-        }
-        if (result == Math.rint(result)) {
-            // Exact for any magnitude; a (long) cast would silently clamp values beyond Long.MAX_VALUE.
-            return new BigDecimal(result).toPlainString();
-        }
-        return String.format(Locale.ROOT, "%.4f", result);
+        BigDecimal whole = result.stripTrailingZeros();
+        return whole.scale() <= 0
+                ? whole.toPlainString()
+                : result.setScale(4, RoundingMode.HALF_UP).toPlainString();
+    }
+
+    private static int digits(String number) {
+        return (int) number.chars().filter(Character::isDigit).count();
     }
 }
