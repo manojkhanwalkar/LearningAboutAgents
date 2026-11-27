@@ -34,7 +34,9 @@ public class TreeOfThoughtsAgent {
     static final int BEAM_WIDTH = 2;
     static final int MAX_PROPOSALS = 5;
 
-    private static final Pattern STEP = Pattern.compile("(-?\\d+)\\s*([-+*/×x÷])\\s*(-?\\d+)\\s*=\\s*(-?\\d+)");
+    /** Numbers are limited to 6 digits, so parsing model output can never overflow an {@code int}. */
+    private static final Pattern STEP = Pattern.compile("(-?\\d{1,6})\\s*([-+*/×x÷])\\s*(-?\\d{1,6})\\s*=\\s*(-?\\d{1,6})(?!\\d)");
+    private static final Pattern VERDICT = Pattern.compile("^\\W*(sure|likely|impossible)\\b");
 
     /** A position in the search: the numbers still to use, and the steps taken to get here. */
     record Node(List<Integer> left, List<String> steps) {
@@ -64,6 +66,9 @@ public class TreeOfThoughtsAgent {
     /** Runs the beam search from {@code numbers}; stops early when a position reaches exactly 24. */
     public Result solve(List<Integer> numbers) {
         List<String> trace = new ArrayList<>();
+        if (numbers.size() == 1 && numbers.getFirst() == TARGET) {
+            return new Result(Optional.of(List.of()), List.of("already " + TARGET));
+        }
         List<Node> beam = List.of(new Node(List.copyOf(numbers), List.of()));
         for (int depth = 1; depth < numbers.size(); depth++) {
             List<Node> children = new ArrayList<>();
@@ -78,9 +83,10 @@ public class TreeOfThoughtsAgent {
                     return new Result(Optional.of(child.steps()), trace);
                 }
             }
-            // The same numbers reached by different paths are one position: rate it once and keep one copy.
+            // The same numbers reached by different paths are one position: rate it once and keep one copy. A single
+            // number that isn't 24 is a dead end that code has already judged, so it is never sent to the model.
             Map<String, Node> unique = new LinkedHashMap<>();
-            children.forEach(child -> unique.putIfAbsent(child.key(), child));
+            children.stream().filter(child -> child.left().size() > 1).forEach(child -> unique.putIfAbsent(child.key(), child));
             Map<Node, Integer> scores = new LinkedHashMap<>();
             unique.values().forEach(child -> scores.put(child, rate(child)));
             beam = scores.entrySet().stream()
@@ -112,16 +118,24 @@ public class TreeOfThoughtsAgent {
                 .toList();
     }
 
-    /** Asks the model how promising a position is; "sure" = 3, "likely" = 2, anything else = 0 (pruned). */
+    /**
+     * Asks the model how promising a position is. Only the reply's first word counts: "sure" = 3, "likely" = 2,
+     * anything else = 0 (pruned). Matching anywhere in the reply would read "unlikely" as likely and "not sure" as sure.
+     */
     int rate(Node node) {
         String reply = llm.apply("""
                 Game of 24. Can these numbers reach exactly 24 using each once with + - * /?
                 Numbers: %s
                 Reply with one word: sure, likely or impossible.""".formatted(node.key())).toLowerCase(Locale.ROOT);
-        if (reply.contains("impossible")) {
+        var verdict = VERDICT.matcher(reply);
+        if (!verdict.find()) {
             return 0;
         }
-        return reply.contains("sure") ? 3 : reply.contains("likely") ? 2 : 0;
+        return switch (verdict.group(1)) {
+            case "sure" -> 3;
+            case "likely" -> 2;
+            default -> 0;
+        };
     }
 
     /**
@@ -145,12 +159,18 @@ public class TreeOfThoughtsAgent {
         if (!pool.remove(Integer.valueOf(a)) || !pool.remove(Integer.valueOf(b))) {
             return Optional.empty();
         }
-        Optional<Integer> actual = switch (op) {
-            case '+' -> Optional.of(a + b);
-            case '-' -> Optional.of(a - b);
-            case '*' -> Optional.of(a * b);
-            default -> b != 0 && a % b == 0 ? Optional.of(a / b) : Optional.empty();
-        };
+        Optional<Integer> actual;
+        try {
+            // Exact arithmetic: an overflowing product must be rejected, not wrapped around into a "valid" step.
+            actual = switch (op) {
+                case '+' -> Optional.of(Math.addExact(a, b));
+                case '-' -> Optional.of(Math.subtractExact(a, b));
+                case '*' -> Optional.of(Math.multiplyExact(a, b));
+                default -> b != 0 && a % b == 0 ? Optional.of(a / b) : Optional.empty();
+            };
+        } catch (ArithmeticException overflow) {
+            return Optional.empty();
+        }
         return actual.filter(r -> r == claimed).map(r -> new Step(a, op, b, r));
     }
 
@@ -186,9 +206,14 @@ public class TreeOfThoughtsAgent {
     }
 
     public static void main(String[] args) {
-        List<Integer> numbers = args.length == 4
-                ? List.of(args).stream().map(Integer::parseInt).toList()
-                : List.of(4, 9, 10, 13);
+        List<Integer> numbers = List.of(4, 9, 10, 13);
+        if (args.length > 0) {
+            if (args.length != 4 || !List.of(args).stream().allMatch(arg -> arg.matches("\\d{1,3}"))) {
+                System.out.println("Usage: give exactly four whole numbers, e.g. -Dexec.args=\"3 3 8 8\"");
+                return;
+            }
+            numbers = List.of(args).stream().map(Integer::parseInt).toList();
+        }
 
         Result result = new TreeOfThoughtsAgent(LlmProvider.resolve(placeholder())).solve(numbers);
 

@@ -39,6 +39,38 @@ class TreeOfThoughtsAgentTest {
     }
 
     @Test
+    void hugeOrOverflowingNumbersAreRejectedNotCrashing() {
+        assertEquals(Optional.empty(), TreeOfThoughtsAgent.parseStep("4 * 9 = 99999999999", List.of(4, 9)));
+        assertEquals(Optional.empty(), TreeOfThoughtsAgent.parseStep("65536 * 65536 = 0", List.of(65536, 65536)));
+        assertEquals(Optional.empty(), TreeOfThoughtsAgent.parseStep("999999 * 999999 = 999999", List.of(999999, 999999)));
+        // A proposal the model got badly wrong must not crash the whole search.
+        var result = new TreeOfThoughtsAgent(p -> p.contains("Numbers left: ") ? "4 * 9 = 99999999999999" : "likely")
+                .solve(List.of(4, 9, 10, 13));
+        assertTrue(result.solution().isEmpty());
+    }
+
+    @Test
+    void alreadyTwentyFourIsSolvedWithNoSteps() {
+        assertEquals(Optional.of(List.of()), new TreeOfThoughtsAgent(p -> "").solve(List.of(24)).solution());
+    }
+
+    @Test
+    void singleNumbersThatMissAreNeverSentForRating() {
+        var ratedSingles = new AtomicInteger();
+        new TreeOfThoughtsAgent(prompt -> {
+            if (prompt.contains("Numbers left: ")) {
+                return "1 + 1 = 2\n2 + 1 = 3\n2 + 2 = 4";
+            }
+            String numbers = prompt.substring(prompt.indexOf("Numbers: ") + 9).split("\n")[0].strip();
+            if (!numbers.contains(" ")) {
+                ratedSingles.incrementAndGet();   // a one-number position reached the model
+            }
+            return "likely";
+        }).solve(List.of(1, 1, 2));
+        assertEquals(0, ratedSingles.get());
+    }
+
+    @Test
     void applyReplacesTheOperandsWithTheResult() {
         var step = TreeOfThoughtsAgent.parseStep("10 - 4 = 6", List.of(4, 9, 10, 13)).orElseThrow();
         Node next = TreeOfThoughtsAgent.apply(new Node(List.of(4, 9, 10, 13), List.of()), step);
@@ -57,8 +89,8 @@ class TreeOfThoughtsAgentTest {
             return "likely";
         }).solve(List.of(1, 2, 3, 4));
 
-        // depth 1: "3 3 4" twice → rated once; depth 2 and 3 add more, but never a duplicate rating per depth.
-        assertTrue(ratings.get() <= 3, "rated " + ratings.get() + " times");
+        // Both proposals lead to [3 3 4]; it is rated once. Depth 2 has no valid proposals, so nothing else is rated.
+        assertEquals(1, ratings.get());
     }
 
     @Test
@@ -77,11 +109,16 @@ class TreeOfThoughtsAgentTest {
         assertEquals(2, new TreeOfThoughtsAgent(p -> "likely").rate(node));
         assertEquals(0, new TreeOfThoughtsAgent(p -> "Impossible, not sure").rate(node));
         assertEquals(0, new TreeOfThoughtsAgent(p -> "maybe").rate(node));
+        assertEquals(0, new TreeOfThoughtsAgent(p -> "unlikely").rate(node));
+        assertEquals(0, new TreeOfThoughtsAgent(p -> "I'm not sure").rate(node));
+        assertEquals(3, new TreeOfThoughtsAgent(p -> "**Sure**").rate(node));
     }
 
     @Test
     void mainPrintsTheSolution() throws Exception {
         assertTrue(MainRunner.run(TreeOfThoughtsAgent::main).contains("then 4 * 6 = 24"));
         assertTrue(MainRunner.run(TreeOfThoughtsAgent::main, "1", "1", "1", "1").contains("No solution"));
+        assertTrue(MainRunner.run(TreeOfThoughtsAgent::main, "3", "3", "8", "8", "1").contains("Usage"));
+        assertTrue(MainRunner.run(TreeOfThoughtsAgent::main, "a", "b", "c", "d").contains("Usage"));
     }
 }

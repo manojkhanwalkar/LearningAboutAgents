@@ -1,6 +1,7 @@
 package com.learning.agents.reasoning;
 
 import com.learning.agents.llm.LlmProvider;
+import com.learning.agents.llm.PromptText;
 import com.learning.agents.llm.ScriptedLlm;
 import com.learning.agents.llm.TextLists;
 import org.bsc.langgraph4j.CompiledGraph;
@@ -35,7 +36,8 @@ public class PlanExecuteGraph {
     static final int MAX_STEPS = 6;
     static final int MAX_PLAN_STEPS = 5;
 
-    private static final Pattern FINAL = Pattern.compile("(?is)^\\s*FINAL:\\s*(.+)$");
+    /** {@code FINAL:} at the start of any line (models often write a sentence first); the answer runs to the end. */
+    private static final Pattern FINAL = Pattern.compile("(?ims)^\\W*FINAL:\\s*(.+)");
 
     /**
      * Builds the graph around a pluggable LLM so it can be tested without Ollama.
@@ -47,8 +49,8 @@ public class PlanExecuteGraph {
                 .addNode("planner", node_async(state -> {
                     List<String> plan = TextLists.items(llm.apply("""
                             You are a planner. Write a short numbered plan (at most %d steps) to reach the goal.
-                            Goal: %s""".formatted(MAX_PLAN_STEPS, state.goal())), MAX_PLAN_STEPS);
-                    return Map.of(PlanExecuteState.PLAN, plan, PlanExecuteState.PLAN_HISTORY, String.join(" | ", plan));
+                            Goal: %s""".formatted(MAX_PLAN_STEPS, tagged(state.goal()))), MAX_PLAN_STEPS);
+                    return planUpdate(plan);
                 }))
                 .addNode("executor", node_async(state -> {
                     String step = state.plan().getFirst();
@@ -57,7 +59,7 @@ public class PlanExecuteGraph {
                             Goal: %s
                             Done so far:
                             %s
-                            Step: %s""".formatted(state.goal(), done(state), step)).strip();
+                            Step: %s""".formatted(tagged(state.goal()), done(state), step)).strip();
                     return Map.of(PlanExecuteState.PAST_STEPS, step + " → " + result,
                             PlanExecuteState.STEPS, state.steps() + 1);
                 }))
@@ -68,20 +70,19 @@ public class PlanExecuteGraph {
                             Goal: %s
                             Done so far:
                             %s
-                            Old remaining plan: %s""".formatted(state.goal(), done(state),
+                            Old remaining plan: %s""".formatted(tagged(state.goal()), done(state),
                             String.join(" | ", state.plan().subList(1, state.plan().size()))));
                     var finalAnswer = FINAL.matcher(reply);
                     if (finalAnswer.find()) {
                         return Map.of(PlanExecuteState.ANSWER, finalAnswer.group(1).strip(), PlanExecuteState.PLAN, List.of());
                     }
-                    List<String> plan = TextLists.items(reply, MAX_PLAN_STEPS);
-                    return Map.of(PlanExecuteState.PLAN, plan, PlanExecuteState.PLAN_HISTORY, String.join(" | ", plan));
+                    return planUpdate(TextLists.items(reply, MAX_PLAN_STEPS));
                 }))
                 .addNode("finish", node_async(state -> Map.of(PlanExecuteState.ANSWER, llm.apply("""
                         Summarise what was achieved towards the goal and what is still open, in two sentences.
                         Goal: %s
                         Done so far:
-                        %s""".formatted(state.goal(), done(state))).strip())))
+                        %s""".formatted(tagged(state.goal()), done(state))).strip())))
                 .addEdge(START, "planner")
                 .addConditionalEdges("planner",
                         edge_async(state -> state.plan().isEmpty() ? "finish" : "executor"),
@@ -99,6 +100,18 @@ public class PlanExecuteGraph {
             return "done";
         }
         return state.plan().isEmpty() || state.steps() >= MAX_STEPS ? "finish" : "executor";
+    }
+
+    /** Sets the new plan, and records it in the history only if it has steps (an empty plan isn't a version). */
+    private static Map<String, Object> planUpdate(List<String> plan) {
+        return plan.isEmpty()
+                ? Map.of(PlanExecuteState.PLAN, plan)
+                : Map.of(PlanExecuteState.PLAN, plan, PlanExecuteState.PLAN_HISTORY, String.join(" | ", plan));
+    }
+
+    /** The user's goal fenced as data: it reaches every prompt, so it must not be able to pose as instructions. */
+    static String tagged(String goal) {
+        return "<goal>" + PromptText.escape(goal) + "</goal>";
     }
 
     private static String done(PlanExecuteState state) {

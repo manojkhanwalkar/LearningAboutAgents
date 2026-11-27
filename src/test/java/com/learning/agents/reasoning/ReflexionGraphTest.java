@@ -72,6 +72,10 @@ class ReflexionGraphTest {
         assertEquals(Optional.of("7 is not greater than 10"), ReflexionGraph.checkPrimes("7, 11, 13"));
         assertEquals(Optional.of("15 is not prime"), ReflexionGraph.checkPrimes("11, 15, 17"));
         assertEquals(Optional.of("numbers are not in ascending order"), ReflexionGraph.checkPrimes("13, 13, 17"));
+        // Dots and spaces inside numbers are not silently removed.
+        assertTrue(ReflexionGraph.checkPrimes("1.1, 1.3, 1.7").isPresent());
+        assertTrue(ReflexionGraph.checkPrimes("1 1, 1 3, 1 7").isPresent());
+        assertEquals(Optional.of("'13.0' is not a whole number"), ReflexionGraph.checkPrimes("11, 13.0, 17"));
         assertFalse(ReflexionGraph.isPrime(1));
         assertTrue(ReflexionGraph.isPrime(2));
         assertFalse(ReflexionGraph.isPrime(49));
@@ -81,6 +85,7 @@ class ReflexionGraphTest {
     void mainShowsLessonsAndTheSolution() throws Exception {
         String out = MainRunner.run(ReflexionGraph::main);
         assertTrue(out.contains("Lessons learned:") && out.contains("Solved in 3 attempt(s): 11, 13, 17"));
-        assertTrue(MainRunner.run(ReflexionGraph::main, "other", "task").contains("Task: other task"));
+        String withArgs = MainRunner.run(ReflexionGraph::main, "Write", "a", "haiku");
+        assertTrue(withArgs.contains("arguments are ignored") && withArgs.contains("Task: " + ReflexionGraph.TASK));
     }
 }

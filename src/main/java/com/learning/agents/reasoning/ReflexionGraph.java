@@ -99,7 +99,7 @@ public class ReflexionGraph {
      * 10, strictly ascending.
      */
     static Optional<String> checkPrimes(String answer) {
-        String[] parts = answer.replaceAll("[.\\s]", "").split(",");
+        String[] parts = answer.strip().replaceFirst("\\.$", "").split("\\s*,\\s*");
         if (parts.length != 3) {
             return Optional.of("expected exactly 3 numbers, got " + parts.length);
         }
@@ -153,7 +153,11 @@ public class ReflexionGraph {
     }
 
     public static void main(String[] args) throws Exception {
-        String task = args.length > 0 ? String.join(" ", args) : TASK;
+        // The judge must fit the task: checkPrimes only grades TASK, so this sample doesn't take a task from args.
+        if (args.length > 0) {
+            System.out.println("Note: this sample's checker only grades its built-in task, so the arguments are ignored.");
+        }
+        String task = TASK;
 
         ReflexionState result = run(LlmProvider.resolve(placeholder()), ReflexionGraph::checkPrimes, task, List.of());
 

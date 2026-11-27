@@ -629,7 +629,7 @@ START → planner → executor → replanner ─┬─ FINAL: answer → END
 **What to look for.**
 - Plan v1 books "Steak Corner".
 - The first step finds that two people are vegan.
-- Plan v2 switches to "Green Fork". Three steps later the replanner says `FINAL:`.
+- Plan v2 switches to "Green Fork". Two steps later the replanner says `FINAL:`.
 
 **Try this.**
 - Make the booking step fail ("Green Fork is full") and write a replanner rule that recovers.
