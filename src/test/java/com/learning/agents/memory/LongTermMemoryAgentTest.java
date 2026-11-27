@@ -177,6 +177,30 @@ class LongTermMemoryAgentTest {
     }
 
     @Test
+    void oversizedMemoryFileIsRefusedBeforeParsing() throws Exception {
+        // The store never writes more than MAX_FACTS short facts, so a far larger file was not written by it.
+        Path file = dir.resolve("huge.json");
+        Files.writeString(file, "[\"" + "x".repeat((int) FactStore.MAX_FILE_BYTES) + "\"]");
+        var e = assertThrows(UncheckedIOException.class, () -> new FactStore(file, embeddings));
+        assertTrue(e.getMessage().contains("Cannot read memory file"));
+    }
+
+    @Test
+    void loadingManyFactsIsLinear() throws Exception {
+        // De-duplicating by scanning the kept list was quadratic: 60k short facts took minutes.
+        Path file = dir.resolve("many.json");
+        var saved = new ArrayList<String>();
+        for (int i = 0; i < 60_000; i++) {
+            saved.add("f" + i);
+        }
+        Files.writeString(file, new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(saved));
+
+        var store = assertTimeoutPreemptively(Duration.ofSeconds(5), () -> new FactStore(file, embeddings));
+        assertEquals(FactStore.MAX_FACTS, store.all().size());
+        assertEquals("f59999", store.all().getLast());
+    }
+
+    @Test
     void blankQueriesRecallNothing() {
         var store = new FactStore(dir.resolve("m.json"), embeddings);
         store.add("Likes tea");

@@ -522,8 +522,8 @@ close together, and searches by vector distance. Two extra steps make it work in
   such as "On a 0-10 scale: 9".
 - It keeps the best `TOP_K` (2) chunks that score at least `MIN_RERANK_SCORE` (6). If none survive, it says "I don't
   know" without an answer call.
-- Chunks go into the answer prompt escaped (`PromptText.escape`) and labelled as data, so a document containing
-  `</doc>` can't break out of its fence.
+- Chunks go into the rerank and answer prompts escaped (`PromptText.escape`) and labelled as data, so a document
+  containing `</doc>` can't break out of its fence.
 
 **Watch the score scale.** LangChain4j store scores are *relevance* scores, `(cosine + 1) / 2`. A score of 0.5 means
 unrelated, not "half relevant", so useful thresholds sit above 0.5.
@@ -552,7 +552,8 @@ This catches the common failure where the user's words ("PTO") don't match the d
 **How the sample does it.**
 - `retrieve` searches for `CANDIDATES` (3) chunks.
 - `grade` asks a yes/no question per chunk; yes/no is easier for a small model than a score. `isYes` needs an
-  explicit "yes", so an unclear reply means "not relevant".
+  explicit "yes", so an unclear reply means "not relevant". The chunk is fenced and escaped there too, since the
+  grade decides what reaches the answer.
 - `afterGrading` routes to `generate` if any chunk passed, to `rewrite` while fewer than `MAX_REWRITES` (2) rewrites
   have been made, and to `give_up` otherwise.
 - `rewrite` asks for plainer or more formal words, falling back to the question if the reply is blank.
