@@ -17,7 +17,8 @@ Hands-on experiments with LLM agents in Java, using **LangChain4j** and **LangGr
 ./mvnw test
 ```
 
-The unit tests use a fake LLM, so they don't need Ollama.
+The unit tests use a fake LLM, so they don't need Ollama. `./mvnw verify` also writes a JaCoCo coverage report to
+`target/site/jacoco/index.html`.
 
 ## Examples
 
@@ -30,12 +31,44 @@ The unit tests use a fake LLM, so they don't need Ollama.
 
 Pass your own prompt with `-Dexec.args="..."`.
 
+### Agent-pattern samples (placeholder LLM)
+
+These ten samples run **without Ollama**: each one ships a scripted placeholder LLM, so you can step through the pattern
+and read its output right away. Set `LLM_BACKEND=ollama` to send the same prompts to a real model. They use plain-text
+prompts only, with no native tool calling, so any instruction-following model works, including Gemma.
+
+Suggested reading order, simplest first:
+
+| # | Example | Concept | Run |
+|---|---|---|---|
+| 1 | `graph.PromptChainingGraph` | **Prompt chaining**: a fixed outline → draft → polish chain, with a plain-code gate that retries a bad outline | `./mvnw exec:java -Dexec.mainClass=com.learning.agents.graph.PromptChainingGraph` |
+| 2 | `graph.RouterGraph` | **Routing**: a classifier call picks a specialist prompt; unexpected labels fall back to a safe default | `./mvnw exec:java -Dexec.mainClass=com.learning.agents.graph.RouterGraph` |
+| 3 | `chat.StructuredOutputAgent` | **Structured output**: ask for JSON, parse and validate it into a record, and send the error back so the model can repair it | `./mvnw exec:java -Dexec.mainClass=com.learning.agents.chat.StructuredOutputAgent` |
+| 4 | `chat.ConversationMemoryAgent` | **Memory**: keep recent turns verbatim and fold older ones into an LLM-written running summary | `./mvnw exec:java -Dexec.mainClass=com.learning.agents.chat.ConversationMemoryAgent` |
+| 5 | `rag.RagAgent` | **RAG**: TF-IDF retrieval over a small handbook, grounded answers with `[doc-id]` citations, and "I don't know" with no LLM call when nothing matches | `./mvnw exec:java -Dexec.mainClass=com.learning.agents.rag.RagAgent` |
+| 6 | `chat.GuardrailsAgent` | **Guardrails**: input checks (length, prompt injection, blocked topics) before the call, output checks (PII redaction, system-prompt leaks) after it | `./mvnw exec:java -Dexec.mainClass=com.learning.agents.chat.GuardrailsAgent` |
+| 7 | `chat.SelfConsistencyAgent` | **Self-consistency and parallel calls**: sample the same question 5 times on virtual threads and take a majority vote (raise the temperature for real models) | `./mvnw exec:java -Dexec.mainClass=com.learning.agents.chat.SelfConsistencyAgent` |
+| 8 | `graph.OrchestratorWorkersGraph` | **Orchestrator-workers**: the LLM writes the plan at run time, one worker per subtask, then a synthesizer merges the results | `./mvnw exec:java -Dexec.mainClass=com.learning.agents.graph.OrchestratorWorkersGraph` |
+| 9 | `graph.SupervisorGraph` | **Multi-agent supervisor**: researcher, writer and critic agents share a scratchpad, and a supervisor picks who acts next until `FINISH` | `./mvnw exec:java -Dexec.mainClass=com.learning.agents.graph.SupervisorGraph` |
+| 10 | `graph.HumanApprovalGraph` | **Human in the loop**: a checkpointer plus `interruptBefore` pauses the graph so you approve the action on the console before it runs | `./mvnw exec:java -Dexec.mainClass=com.learning.agents.graph.HumanApprovalGraph` |
+
+Running them against your Ollama server, for example on another machine on your network:
+
+```bash
+LLM_BACKEND=ollama OLLAMA_BASE_URL=http://192.168.1.50:11434 OLLAMA_MODEL=gemma3 \
+  ./mvnw exec:java -Dexec.mainClass=com.learning.agents.rag.RagAgent
+```
+
+The placeholder replies are keyed to the default prompts, so with the placeholder, a custom `-Dexec.args` prompt mostly
+gets the fallback reply. Use `LLM_BACKEND=ollama` to try your own prompts.
+
 ## Configuration
 
 | Env var | Default |
 |---|---|
 | `OLLAMA_BASE_URL` | `http://localhost:11434` |
 | `OLLAMA_MODEL` | `llama3.1` |
+| `LLM_BACKEND` | `placeholder` (the agent-pattern samples only; `ollama` uses the two settings above) |
 
 ```bash
 OLLAMA_MODEL=qwen3 ./mvnw exec:java -Dexec.mainClass=com.learning.agents.tools.ToolCallingAgent

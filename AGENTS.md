@@ -27,6 +27,7 @@ Library versions are defined once as properties in `pom.xml`. Add LangChain4j an
 ```bash
 ./mvnw compile                         # compile
 ./mvnw test                            # unit tests (no Ollama needed)
+./mvnw verify                          # tests + JaCoCo coverage report (target/site/jacoco)
 ./mvnw exec:java                       # run the default example (HelloOllama)
 ./mvnw exec:java -Dexec.mainClass=com.learning.agents.tools.ToolCallingAgent
 ./mvnw exec:java -Dexec.mainClass=com.learning.agents.graph.WriterReviewerGraph
@@ -41,6 +42,7 @@ Read from environment variables in `com.learning.agents.OllamaConfig`:
 |---|---|
 | `OLLAMA_BASE_URL` | `http://localhost:11434` |
 | `OLLAMA_MODEL` | `llama3.1` |
+| `LLM_BACKEND` | `placeholder`, read by `com.learning.agents.llm.LlmProvider`; `ollama` switches the agent-pattern samples to a real model |
 
 Examples that use tools or graphs need a model that supports **tool calling** (e.g. `llama3.1`, `qwen3`, `mistral`).
 Check that the server is up with `curl localhost:11434/api/tags`.
@@ -50,9 +52,11 @@ Check that the server is up with `curl localhost:11434/api/tags`.
 ```
 src/main/java/com/learning/agents/
   OllamaConfig.java          # the single place that builds Ollama models
-  chat/                      # plain prompt -> reply examples
+  llm/                       # LlmProvider (placeholder vs Ollama) and ScriptedLlm (canned replies)
+  chat/                      # prompt -> reply patterns: memory, structured output, guardrails, voting
   tools/                     # LangChain4j AI Services + @Tool examples
   graph/                     # LangGraph4j StateGraph workflows
+  rag/                       # retrieval-augmented generation (KeywordRetriever + RagAgent)
 src/test/java/...            # tests mirror main packages
 .claude/skills/              # Claude Code skills (e.g. new-agent-example scaffolds a new sample)
 ```
@@ -60,6 +64,10 @@ src/test/java/...            # tests mirror main packages
 ## Conventions
 
 - Create models through `OllamaConfig`. Do not hard-code URLs or model names in examples.
+- New samples take their LLM as a `Function<String, String>`, provide a `static ScriptedLlm placeholder()` with canned
+  replies, and get it in `main` through `LlmProvider.resolve(placeholder())`, so they run without Ollama by default.
+- Accumulating graph-state keys whose entries can legitimately repeat (worker results, agent scratchpads) use
+  `Channels.appenderWithDuplicate`; plain `Channels.appender` silently drops a value already in the list.
 - Each example is a self-contained class with a `main` method that accepts an optional prompt via `args`.
 - Graph nodes take their LLM as a `Function<String, String>` (or similar) so they can be unit-tested with a fake. **Unit tests must not require a running Ollama server.**
 - Put graph state in a dedicated `AgentState` subclass with constant keys and typed accessors.
