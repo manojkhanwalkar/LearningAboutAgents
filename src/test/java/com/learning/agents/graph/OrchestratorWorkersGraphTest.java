@@ -1,6 +1,8 @@
 package com.learning.agents.graph;
 
 import com.learning.agents.MainRunner;
+import org.bsc.langgraph4j.GraphInput;
+import org.bsc.langgraph4j.RunnableConfig;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -15,7 +17,7 @@ class OrchestratorWorkersGraphTest {
     @Test
     void runsOneWorkerPerSubtaskThenSynthesizes() throws Exception {
         OrchestratorState result = OrchestratorWorkersGraph.build(OrchestratorWorkersGraph.placeholder())
-                .invoke(Map.of(OrchestratorState.TASK, "local vs hosted"))
+                .invoke(GraphInput.args(Map.of(OrchestratorState.TASK, "local vs hosted")), RunnableConfig.builder().build())
                 .orElseThrow();
 
         assertEquals(3, result.subtasks().size());
@@ -36,7 +38,7 @@ class OrchestratorWorkersGraphTest {
                     }
                     return "ok";
                 })
-                .invoke(Map.of(OrchestratorState.TASK, "big task"))
+                .invoke(GraphInput.args(Map.of(OrchestratorState.TASK, "big task")), RunnableConfig.builder().build())
                 .orElseThrow();
 
         assertEquals(OrchestratorWorkersGraph.MAX_SUBTASKS, workerCalls.get());
@@ -46,7 +48,7 @@ class OrchestratorWorkersGraphTest {
     @Test
     void identicalWorkerOutputsAreAllKept() throws Exception {
         OrchestratorState result = OrchestratorWorkersGraph.build(prompt -> prompt.startsWith("You are an orchestrator") ? "a\nb\nc" : "same")
-                .invoke(Map.of(OrchestratorState.TASK, "t"))
+                .invoke(GraphInput.args(Map.of(OrchestratorState.TASK, "t")), RunnableConfig.builder().build())
                 .orElseThrow();
 
         assertEquals(List.of("same", "same", "same"), result.results());
@@ -55,7 +57,7 @@ class OrchestratorWorkersGraphTest {
     @Test
     void emptyPlanGoesStraightToSynthesis() throws Exception {
         OrchestratorState result = OrchestratorWorkersGraph.build(prompt -> prompt.startsWith("You are an orchestrator") ? "\n\n" : "nothing to do")
-                .invoke(Map.of(OrchestratorState.TASK, "t"))
+                .invoke(GraphInput.args(Map.of(OrchestratorState.TASK, "t")), RunnableConfig.builder().build())
                 .orElseThrow();
 
         assertTrue(result.results().isEmpty());

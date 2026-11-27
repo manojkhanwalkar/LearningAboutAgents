@@ -4,7 +4,9 @@ import com.learning.agents.llm.LlmProvider;
 import com.learning.agents.llm.ScriptedLlm;
 import com.learning.agents.llm.TextLists;
 import org.bsc.langgraph4j.CompiledGraph;
+import org.bsc.langgraph4j.GraphInput;
 import org.bsc.langgraph4j.GraphStateException;
+import org.bsc.langgraph4j.RunnableConfig;
 import org.bsc.langgraph4j.StateGraph;
 
 import java.util.List;
@@ -117,7 +119,7 @@ public class OrchestratorWorkersGraph {
                 : "Should a small team run LLMs locally or use a hosted API?";
 
         OrchestratorState result = build(LlmProvider.resolve(placeholder()))
-                .invoke(Map.of(OrchestratorState.TASK, task))
+                .invoke(GraphInput.args(Map.of(OrchestratorState.TASK, task)), RunnableConfig.builder().build())
                 .orElseThrow();
 
         System.out.println("Plan and worker results:");

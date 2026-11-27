@@ -2,6 +2,8 @@ package com.learning.agents.rag;
 
 import com.learning.agents.MainRunner;
 import com.learning.agents.llm.HashingEmbeddingModel;
+import org.bsc.langgraph4j.GraphInput;
+import org.bsc.langgraph4j.RunnableConfig;
 import org.junit.jupiter.api.Test;
 
 import java.util.Map;
@@ -16,7 +18,7 @@ class CorrectiveRagGraphTest {
     private final VectorRetriever handbook = new VectorRetriever(new HashingEmbeddingModel()).index(EmbeddingRagAgent.HANDBOOK);
 
     private CorrectiveRagState run(java.util.function.Function<String, String> llm, String question) throws Exception {
-        return CorrectiveRagGraph.build(llm, handbook).invoke(Map.of(CorrectiveRagState.QUESTION, question)).orElseThrow();
+        return CorrectiveRagGraph.build(llm, handbook).invoke(GraphInput.args(Map.of(CorrectiveRagState.QUESTION, question)), RunnableConfig.builder().build()).orElseThrow();
     }
 
     @Test

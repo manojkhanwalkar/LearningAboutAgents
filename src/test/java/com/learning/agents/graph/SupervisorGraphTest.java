@@ -1,6 +1,8 @@
 package com.learning.agents.graph;
 
 import com.learning.agents.MainRunner;
+import org.bsc.langgraph4j.GraphInput;
+import org.bsc.langgraph4j.RunnableConfig;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -15,7 +17,7 @@ class SupervisorGraphTest {
     @Test
     void supervisorDelegatesUntilFinish() throws Exception {
         SupervisorState result = SupervisorGraph.build(SupervisorGraph.placeholder())
-                .invoke(Map.of(SupervisorState.REQUEST, "Explain Gemma"))
+                .invoke(GraphInput.args(Map.of(SupervisorState.REQUEST, "Explain Gemma")), RunnableConfig.builder().build())
                 .orElseThrow();
 
         assertEquals(List.of("researcher", "writer", "critic"),
@@ -27,7 +29,7 @@ class SupervisorGraphTest {
     @Test
     void stopsAtTurnLimitWhenSupervisorNeverFinishes() throws Exception {
         SupervisorState result = SupervisorGraph.build(prompt -> prompt.startsWith("You are a supervisor") ? "NEXT: writer" : "draft")
-                .invoke(Map.of(SupervisorState.REQUEST, "r"))
+                .invoke(GraphInput.args(Map.of(SupervisorState.REQUEST, "r")), RunnableConfig.builder().build())
                 .orElseThrow();
 
         assertEquals(SupervisorGraph.MAX_TURNS, result.turns());
@@ -37,7 +39,7 @@ class SupervisorGraphTest {
     @Test
     void unknownAgentEndsTheRun() throws Exception {
         SupervisorState result = SupervisorGraph.build(prompt -> "NEXT: hacker")
-                .invoke(Map.of(SupervisorState.REQUEST, "r"))
+                .invoke(GraphInput.args(Map.of(SupervisorState.REQUEST, "r")), RunnableConfig.builder().build())
                 .orElseThrow();
 
         assertTrue(result.work().isEmpty());

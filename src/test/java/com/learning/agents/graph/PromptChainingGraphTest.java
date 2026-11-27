@@ -1,6 +1,8 @@
 package com.learning.agents.graph;
 
 import com.learning.agents.MainRunner;
+import org.bsc.langgraph4j.GraphInput;
+import org.bsc.langgraph4j.RunnableConfig;
 import org.junit.jupiter.api.Test;
 
 import java.util.Map;
@@ -15,7 +17,7 @@ class PromptChainingGraphTest {
     @Test
     void runsEveryStepInOrderWhenOutlinePassesTheGate() throws Exception {
         PromptChainState result = PromptChainingGraph.build(PromptChainingGraph.placeholder())
-                .invoke(Map.of(PromptChainState.TOPIC, "chaining"))
+                .invoke(GraphInput.args(Map.of(PromptChainState.TOPIC, "chaining")), RunnableConfig.builder().build())
                 .orElseThrow();
 
         assertTrue(result.finalText().orElseThrow().contains("(polished)"));
@@ -32,7 +34,7 @@ class PromptChainingGraphTest {
                     }
                     return prompt.startsWith("Polish") ? "final" : "draft";
                 })
-                .invoke(Map.of(PromptChainState.TOPIC, "x"))
+                .invoke(GraphInput.args(Map.of(PromptChainState.TOPIC, "x")), RunnableConfig.builder().build())
                 .orElseThrow();
 
         assertEquals("final", result.finalText().orElseThrow());
@@ -46,7 +48,7 @@ class PromptChainingGraphTest {
                     calls.incrementAndGet();
                     return "no bullets here";
                 })
-                .invoke(Map.of(PromptChainState.TOPIC, "x"))
+                .invoke(GraphInput.args(Map.of(PromptChainState.TOPIC, "x")), RunnableConfig.builder().build())
                 .orElseThrow();
 
         assertTrue(result.finalText().isEmpty());
@@ -66,7 +68,7 @@ class PromptChainingGraphTest {
                     prompts.add(prompt);
                     return "- only one";
                 })
-                .invoke(Map.of(PromptChainState.TOPIC, "x"))
+                .invoke(GraphInput.args(Map.of(PromptChainState.TOPIC, "x")), RunnableConfig.builder().build())
                 .orElseThrow();
 
         assertFalse(prompts.getFirst().contains("previous outline"));

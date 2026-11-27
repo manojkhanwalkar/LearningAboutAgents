@@ -3,7 +3,9 @@ package com.learning.agents.graph;
 import com.learning.agents.llm.LlmProvider;
 import com.learning.agents.llm.ScriptedLlm;
 import org.bsc.langgraph4j.CompiledGraph;
+import org.bsc.langgraph4j.GraphInput;
 import org.bsc.langgraph4j.GraphStateException;
+import org.bsc.langgraph4j.RunnableConfig;
 import org.bsc.langgraph4j.StateGraph;
 
 import java.util.Locale;
@@ -97,7 +99,7 @@ public class RouterGraph {
                 : new String[]{"I was charged twice this month", "The app shows error 500 on login", "What are your opening hours?"};
 
         for (String query : queries) {
-            RouterState result = router.invoke(Map.of(RouterState.QUERY, query)).orElseThrow();
+            RouterState result = router.invoke(GraphInput.args(Map.of(RouterState.QUERY, query)), RunnableConfig.builder().build()).orElseThrow();
             System.out.printf("%-40s → %-9s → %s%n", query, result.route(), result.answer().orElse(""));
         }
     }

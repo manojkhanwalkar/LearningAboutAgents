@@ -6,7 +6,9 @@ import com.learning.agents.llm.Replies;
 import com.learning.agents.llm.ScriptedLlm;
 import com.learning.agents.llm.TextLists;
 import org.bsc.langgraph4j.CompiledGraph;
+import org.bsc.langgraph4j.GraphInput;
 import org.bsc.langgraph4j.GraphStateException;
+import org.bsc.langgraph4j.RunnableConfig;
 import org.bsc.langgraph4j.StateGraph;
 
 import java.util.List;
@@ -144,7 +146,7 @@ public class PlanExecuteGraph {
         String goal = args.length > 0 ? String.join(" ", args) : "Organise a team lunch for 8 people this Friday.";
 
         PlanExecuteState result = build(LlmProvider.resolve(placeholder()))
-                .invoke(Map.of(PlanExecuteState.GOAL, goal))
+                .invoke(GraphInput.args(Map.of(PlanExecuteState.GOAL, goal)), RunnableConfig.builder().build())
                 .orElseThrow();
 
         System.out.println("Goal: " + goal);

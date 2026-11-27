@@ -21,9 +21,13 @@ public class ReActState extends AgentState {
     public static final String ANSWER = "answer";
     public static final String STEPS = "steps";
 
-    /** {@code transcript} accumulates Thought/Action/Observation entries; other keys are overwritten. */
+    /**
+     * {@code transcript} accumulates Thought/Action/Observation entries; other keys are overwritten. It keeps
+     * duplicates ({@code Channels.appender} silently drops a value equal to one already in the list), because a model
+     * can repeat a step and get the same Observation back, and the transcript must show every step that ran.
+     */
     public static final Map<String, Channel<?>> SCHEMA = Map.of(
-            TRANSCRIPT, Channels.appender(ArrayList::new)
+            TRANSCRIPT, Channels.appenderWithDuplicate(ArrayList::new)
     );
 
     public ReActState(Map<String, Object> initData) {

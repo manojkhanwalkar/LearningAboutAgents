@@ -3,7 +3,9 @@ package com.learning.agents.graph;
 import com.learning.agents.llm.LlmProvider;
 import com.learning.agents.llm.ScriptedLlm;
 import org.bsc.langgraph4j.CompiledGraph;
+import org.bsc.langgraph4j.GraphInput;
 import org.bsc.langgraph4j.GraphStateException;
+import org.bsc.langgraph4j.RunnableConfig;
 import org.bsc.langgraph4j.StateGraph;
 
 import java.util.Map;
@@ -108,7 +110,7 @@ public class PromptChainingGraph {
         String topic = args.length > 0 ? String.join(" ", args) : "why agents chain small prompts";
 
         PromptChainState result = build(LlmProvider.resolve(placeholder()))
-                .invoke(Map.of(PromptChainState.TOPIC, topic))
+                .invoke(GraphInput.args(Map.of(PromptChainState.TOPIC, topic)), RunnableConfig.builder().build())
                 .orElseThrow();
 
         result.log().forEach(line -> System.out.println("[" + line + "]"));

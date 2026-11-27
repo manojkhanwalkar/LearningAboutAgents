@@ -3,7 +3,9 @@ package com.learning.agents.reasoning;
 import com.learning.agents.llm.LlmProvider;
 import com.learning.agents.llm.ScriptedLlm;
 import org.bsc.langgraph4j.CompiledGraph;
+import org.bsc.langgraph4j.GraphInput;
 import org.bsc.langgraph4j.GraphStateException;
+import org.bsc.langgraph4j.RunnableConfig;
 import org.bsc.langgraph4j.StateGraph;
 
 import java.util.ArrayList;
@@ -91,7 +93,7 @@ public class ReflexionGraph {
     static ReflexionState run(Function<String, String> llm, Function<String, Optional<String>> checker,
                               String task, List<String> priorLessons) throws Exception {
         return build(llm, checker)
-                .invoke(Map.of(ReflexionState.TASK, task, ReflexionState.LESSONS, new ArrayList<>(priorLessons)))
+                .invoke(GraphInput.args(Map.of(ReflexionState.TASK, task, ReflexionState.LESSONS, new ArrayList<>(priorLessons))), RunnableConfig.builder().build())
                 .orElseThrow();
     }
 

@@ -3,7 +3,9 @@ package com.learning.agents.graph;
 import com.learning.agents.llm.LlmProvider;
 import com.learning.agents.llm.ScriptedLlm;
 import org.bsc.langgraph4j.CompiledGraph;
+import org.bsc.langgraph4j.GraphInput;
 import org.bsc.langgraph4j.GraphStateException;
+import org.bsc.langgraph4j.RunnableConfig;
 import org.bsc.langgraph4j.StateGraph;
 
 import java.util.HashMap;
@@ -149,7 +151,7 @@ public class SupervisorGraph {
         String request = args.length > 0 ? String.join(" ", args) : "Explain how to run Gemma locally.";
 
         SupervisorState result = build(LlmProvider.resolve(placeholder()))
-                .invoke(Map.of(SupervisorState.REQUEST, request))
+                .invoke(GraphInput.args(Map.of(SupervisorState.REQUEST, request)), RunnableConfig.builder().build())
                 .orElseThrow();
 
         result.work().forEach(entry -> System.out.println(entry + "\n"));

@@ -20,9 +20,9 @@ public class WriterState extends AgentState {
     public static final String REVISIONS = "revisions";
     public static final String LOG = "log";
 
-    /** {@code log} accumulates entries from every node; other keys are overwritten. */
+    /** {@code log} accumulates entries from every node (duplicates kept, as a reviewer may repeat its feedback); other keys are overwritten. */
     public static final Map<String, Channel<?>> SCHEMA = Map.of(
-            LOG, Channels.appender(ArrayList::new)
+            LOG, Channels.appenderWithDuplicate(ArrayList::new)
     );
 
     public WriterState(Map<String, Object> initData) {

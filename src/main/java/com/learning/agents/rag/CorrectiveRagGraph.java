@@ -6,7 +6,9 @@ import com.learning.agents.llm.PromptText;
 import com.learning.agents.llm.ScriptedLlm;
 import com.learning.agents.rag.VectorRetriever.Chunk;
 import org.bsc.langgraph4j.CompiledGraph;
+import org.bsc.langgraph4j.GraphInput;
 import org.bsc.langgraph4j.GraphStateException;
+import org.bsc.langgraph4j.RunnableConfig;
 import org.bsc.langgraph4j.StateGraph;
 
 import java.util.List;
@@ -133,7 +135,7 @@ public class CorrectiveRagGraph {
                 : List.of("Does my PTO roll forward?", "What's the dress code?");
 
         for (String question : questions) {
-            CorrectiveRagState result = graph.invoke(Map.of(CorrectiveRagState.QUESTION, question)).orElseThrow();
+            CorrectiveRagState result = graph.invoke(GraphInput.args(Map.of(CorrectiveRagState.QUESTION, question)), RunnableConfig.builder().build()).orElseThrow();
             System.out.println("Q: " + question);
             result.log().forEach(line -> System.out.println("  [" + line + "]"));
             System.out.println("A: " + result.answer().orElse("(none)"));

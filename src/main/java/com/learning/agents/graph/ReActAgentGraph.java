@@ -4,7 +4,9 @@ import com.learning.agents.OllamaConfig;
 import com.learning.agents.graph.ReActTools.ReActTool;
 import dev.langchain4j.model.chat.ChatModel;
 import org.bsc.langgraph4j.CompiledGraph;
+import org.bsc.langgraph4j.GraphInput;
 import org.bsc.langgraph4j.GraphStateException;
+import org.bsc.langgraph4j.RunnableConfig;
 import org.bsc.langgraph4j.StateGraph;
 
 import java.util.List;
@@ -36,7 +38,8 @@ public class ReActAgentGraph {
 
     static final int MAX_STEPS = 6;
 
-    private static final Pattern THOUGHT = Pattern.compile("Thought:\\s*(.*?)\\s*(?=Action:|Final Answer:|$)", Pattern.DOTALL);
+    /** No {@code \s*} around the lazy group (it is stripped instead), which would make a long whitespace run quadratic. */
+    private static final Pattern THOUGHT = Pattern.compile("Thought:(.*?)(?=Action:|Final Answer:|$)", Pattern.DOTALL);
     private static final Pattern ACTION = Pattern.compile("Action:\\s*(\\w+)\\s*\\[(.*?)]", Pattern.DOTALL);
     private static final Pattern FINAL_ANSWER = Pattern.compile("Final Answer:\\s*(.*)", Pattern.DOTALL);
 
@@ -152,7 +155,7 @@ public class ReActAgentGraph {
                 : "How many times taller is the Burj Khalifa than the Eiffel Tower?";
 
         ReActState result = build(model::chat)
-                .invoke(Map.of(ReActState.QUESTION, question))
+                .invoke(GraphInput.args(Map.of(ReActState.QUESTION, question)), RunnableConfig.builder().build())
                 .orElseThrow();
 
         System.out.println("Question: " + question);

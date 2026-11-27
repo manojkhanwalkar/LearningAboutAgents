@@ -1,12 +1,16 @@
 package com.learning.agents.graph;
 
+import org.bsc.langgraph4j.GraphInput;
+import org.bsc.langgraph4j.RunnableConfig;
 import org.junit.jupiter.api.Test;
 
+import java.time.Duration;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -29,7 +33,7 @@ class ReActAgentGraphTest {
                     }
                     return "Thought: I have the ratio.\nFinal Answer: about 2.5 times taller";
                 })
-                .invoke(Map.of(ReActState.QUESTION, "How many times taller is the Burj Khalifa than the Eiffel Tower?"))
+                .invoke(GraphInput.args(Map.of(ReActState.QUESTION, "How many times taller is the Burj Khalifa than the Eiffel Tower?")), RunnableConfig.builder().build())
                 .orElseThrow();
 
         assertEquals("about 2.5 times taller", result.answer().orElseThrow());
@@ -46,7 +50,7 @@ class ReActAgentGraphTest {
                     calls.incrementAndGet();
                     return "Thought: hmm.\nAction: lookup[Atlantis]";
                 })
-                .invoke(Map.of(ReActState.QUESTION, "Where is Atlantis?"))
+                .invoke(GraphInput.args(Map.of(ReActState.QUESTION, "Where is Atlantis?")), RunnableConfig.builder().build())
                 .orElseThrow();
 
         assertTrue(result.answer().isEmpty());
@@ -58,11 +62,28 @@ class ReActAgentGraphTest {
         ReActState result = ReActAgentGraph.build(prompt -> prompt.contains("Invalid action")
                         ? "Final Answer: 42"
                         : "I think the answer is 42.")
-                .invoke(Map.of(ReActState.QUESTION, "What is the answer?"))
+                .invoke(GraphInput.args(Map.of(ReActState.QUESTION, "What is the answer?")), RunnableConfig.builder().build())
                 .orElseThrow();
 
         assertEquals("42", result.answer().orElseThrow());
         assertTrue(result.transcript().get(1).startsWith("Observation: Invalid action"));
+    }
+
+    @Test
+    void transcriptKeepsARepeatedStepAndObservation() throws Exception {
+        // A model that repeats itself must see (and leave behind) every step; a de-duplicating channel would drop the
+        // second identical Action and Observation, so the transcript would no longer match what really happened.
+        AtomicInteger calls = new AtomicInteger();
+        ReActState result = ReActAgentGraph.build(prompt -> calls.incrementAndGet() <= 2
+                        ? "Thought: check the Moon.\nAction: lookup[Moon]"
+                        : "Thought: done.\nFinal Answer: 384400 km")
+                .invoke(GraphInput.args(Map.of(ReActState.QUESTION, "How far is the Moon?")), RunnableConfig.builder().build())
+                .orElseThrow();
+
+        assertEquals("384400 km", result.answer().orElseThrow());
+        assertEquals(5, result.transcript().size());
+        assertEquals(result.transcript().get(0), result.transcript().get(2));
+        assertEquals(result.transcript().get(1), result.transcript().get(3));
     }
 
     @Test
@@ -72,6 +93,14 @@ class ReActAgentGraphTest {
         assertEquals("lookup", step.action());
         assertEquals("Mount Everest", step.input());
         assertNull(step.answer());
+    }
+
+    @Test
+    void parseIsLinearOnLongWhitespaceRuns() {
+        // The old Thought:\s*(.*?)\s*(?=...) pattern rescanned the whitespace run once per character: quadratic.
+        String reply = "Thought: a" + " ".repeat(200_000) + "b";
+        assertTimeoutPreemptively(Duration.ofSeconds(1), () -> assertEquals("a" + " ".repeat(200_000) + "b",
+                ReActAgentGraph.parse(reply).thought()));
     }
 
     @Test

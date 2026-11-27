@@ -1,5 +1,7 @@
 package com.learning.agents.graph;
 
+import org.bsc.langgraph4j.GraphInput;
+import org.bsc.langgraph4j.RunnableConfig;
 import org.junit.jupiter.api.Test;
 
 import java.util.Map;
@@ -15,7 +17,7 @@ class WriterReviewerGraphTest {
     @Test
     void stopsWhenReviewerApproves() throws Exception {
         WriterState result = WriterReviewerGraph.build(prompt -> prompt.contains("strict editor") ? "APPROVED" : "a draft")
-                .invoke(Map.of(WriterState.TOPIC, "testing"))
+                .invoke(GraphInput.args(Map.of(WriterState.TOPIC, "testing")), RunnableConfig.builder().build())
                 .orElseThrow();
 
         assertEquals(1, result.revisions());
@@ -32,10 +34,13 @@ class WriterReviewerGraphTest {
                     }
                     return "draft " + writerCalls.incrementAndGet();
                 })
-                .invoke(Map.of(WriterState.TOPIC, "testing"))
+                .invoke(GraphInput.args(Map.of(WriterState.TOPIC, "testing")), RunnableConfig.builder().build())
                 .orElseThrow();
 
         assertEquals(WriterReviewerGraph.MAX_REVISIONS, result.revisions());
         assertEquals("draft " + WriterReviewerGraph.MAX_REVISIONS, result.draft().orElseThrow());
+        // writer, reviewer, writer, reviewer: the repeated feedback line is logged both times.
+        assertEquals(2 * WriterReviewerGraph.MAX_REVISIONS, result.log().size());
+        assertEquals("reviewer: Needs more detail.", result.log().getLast());
     }
 }

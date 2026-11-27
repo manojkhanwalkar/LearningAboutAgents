@@ -38,7 +38,7 @@ public class LongTermMemoryAgent {
     static final double MIN_RECALL_SCORE = 0.1;
     static final String MEMORY_FILE_ENV = "AGENT_MEMORY_FILE";
 
-    private static final Pattern FACT_LINE = Pattern.compile("(?im)^\\s*FACT:\\s*(.+?)\\s*$");
+    private static final String FACT_LABEL = "FACT:";
     private static final Pattern SENSITIVE = Pattern.compile(
             "password|passcode|passphrase|\\bpwd\\b|\\blogin\\b|api[ _-]?key|secret|token|credit card|card number|"
                     + "\\bcvv\\b|social security|\\bssn\\b|\\bpin\\b",
@@ -95,13 +95,18 @@ public class LongTermMemoryAgent {
         return memory;
     }
 
-    /** Returns the text of every {@code FACT:} line in the extraction reply, in order; empty for {@code NONE}. */
+    /**
+     * Returns the text of every {@code FACT:} line in the extraction reply, in order; empty for {@code NONE}. Scans line
+     * by line (not with a multi-line regex, which is quadratic on a long blank reply), and a {@code FACT:} line with
+     * nothing after it is skipped rather than taking the next line as its fact.
+     */
     static List<String> parseFacts(String reply) {
         List<String> facts = new ArrayList<>();
-        var matcher = FACT_LINE.matcher(reply);
-        while (matcher.find()) {
-            facts.add(matcher.group(1));
-        }
+        reply.lines().map(String::strip)
+                .filter(line -> line.regionMatches(true, 0, FACT_LABEL, 0, FACT_LABEL.length()))
+                .map(line -> line.substring(FACT_LABEL.length()).strip())
+                .filter(fact -> !fact.isEmpty())
+                .forEach(facts::add);
         return facts;
     }
 

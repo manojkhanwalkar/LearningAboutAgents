@@ -8,12 +8,14 @@ import org.junit.jupiter.api.io.TempDir;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class LongTermMemoryAgentTest {
@@ -100,6 +102,18 @@ class LongTermMemoryAgentTest {
     void parseFactsReadsOnlyFactLines() {
         assertEquals(List.of("a", "b c"), LongTermMemoryAgent.parseFacts("Sure!\nFACT: a\n  fact: b c  \nNONE"));
         assertTrue(LongTermMemoryAgent.parseFacts("NONE").isEmpty());
+    }
+
+    @Test
+    void parseFactsNeverTakesAFactFromTheNextLine() {
+        // An empty FACT: line is not a fact; the old (?m)^\s*FACT:\s* pattern skipped the newline and stored the next line.
+        assertEquals(List.of("b"), LongTermMemoryAgent.parseFacts("FACT:\nnot a fact\nFACT: b"));
+    }
+
+    @Test
+    void parseFactsIsLinearOnLongBlankReplies() {
+        String stuck = "\n".repeat(200_000) + "x";
+        assertTimeoutPreemptively(Duration.ofSeconds(1), () -> assertTrue(LongTermMemoryAgent.parseFacts(stuck).isEmpty()));
     }
 
     @Test
