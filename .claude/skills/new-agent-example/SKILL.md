@@ -14,9 +14,9 @@ If `$ARGUMENTS` is empty, ask the user what concept the example should demonstra
 
 | The concept is mostly about... | Style | Package | Model after |
 |---|---|---|---|
-| A single prompt → reply, prompt templates, structured output | Chat | `chat/` | `chat/HelloOllama.java` |
-| An LLM calling Java methods, chat memory, AI Services | Tools | `tools/` | `tools/ToolCallingAgent.java` + `tools/Calculator.java` |
-| Multiple steps, loops, routing, branching, multi-agent handoff | Graph | `graph/` | `graph/WriterReviewerGraph.java` + `graph/WriterState.java` |
+| A single prompt → reply, prompt templates, structured output | Chat | `chat/` | `chat/StructuredOutputAgent.java` |
+| An LLM calling Java methods through native tool calling, AI Services | Tools | `tools/` | `tools/ToolCallingAgent.java` + `tools/Calculator.java` |
+| Multiple steps, loops, routing, branching, multi-agent handoff | Graph | `graph/` (or a topic package such as `rag/`, `reasoning/`, `multiagent/`) | `graph/RouterGraph.java` + `graph/RouterState.java` |
 
 Read the reference files for the chosen style before writing anything, and match their structure, Javadoc density, and naming.
 
@@ -25,7 +25,8 @@ Read the reference files for the chosen style before writing anything, and match
 All paths are under `src/main/java/com/learning/agents/`.
 
 Rules for every style:
-- Get models only from `OllamaConfig.chatModel()`. Never hard-code a base URL or model name.
+- Take the LLM as a `Function<String, String>`, provide a `static ScriptedLlm placeholder()` with canned replies keyed to the default prompt, and get the model in `main` through `LlmProvider.resolve(placeholder())`, so the sample runs without Ollama and `LLM_BACKEND=ollama` switches it to a real model. Never hard-code a base URL or model name; only the Tools style builds its model directly, with `OllamaConfig.chatModel()`.
+- Fence untrusted text in prompts with `llm.PromptText.escape`, parse labelled replies (`ANSWER:`) with `llm.Replies`, and format numbers that are tested or leave the program with `Locale.ROOT`.
 - Use one class with `public static void main(String[] args)`. If `args` is non-empty, join it into the prompt; otherwise use a sensible default prompt that shows off the concept.
 - Add a class-level Javadoc that explains in 1-3 sentences what the example teaches. For graphs, include an ASCII diagram of the nodes and edges.
 - Use modern Java (records, text blocks, `var`, switch expressions) where it makes the code clearer.
@@ -37,8 +38,8 @@ Rules for every style:
 - Make the tool logic a plain method that can be unit-tested directly.
 
 **Graph style**
-- Add a dedicated `XxxState extends AgentState` with `public static final String` keys, a `SCHEMA` map (use `Channels.appender` for accumulating keys such as logs), and typed accessors that return `Optional` or defaults.
-- Expose `public static CompiledGraph<XxxState> build(Function<String, String> llm)` so tests can inject a fake LLM. In `main`, pass `model::chat`.
+- Add a dedicated `XxxState extends AgentState` with `public static final String` keys, a `SCHEMA` map (use `Channels.appender` for accumulating keys such as logs, and `Channels.appenderWithDuplicate` when entries can legitimately repeat), only `Serializable` values, and typed accessors that return `Optional` or defaults.
+- Expose `public static CompiledGraph<XxxState> build(Function<String, String> llm)` so tests can inject a fake LLM. In `main`, pass `LlmProvider.resolve(placeholder())`. Invoke with `graph.invoke(GraphInput.args(map), RunnableConfig.builder().build())`.
 - Use `node_async` / `edge_async`. Add a guard such as `MAX_...` to every loop so it always terminates, even with a misbehaving model.
 - Keep routing decisions in small package-private static methods so they can be tested on their own.
 
@@ -46,7 +47,7 @@ Rules for every style:
 
 Mirror the package under `src/test/java/com/learning/agents/`, as `XxxTest.java`.
 
-- **Tests must never need Ollama.** Use a lambda as the fake LLM that returns canned replies based on the prompt (see `WriterReviewerGraphTest`).
+- **Tests must never need Ollama.** Use a lambda as the fake LLM that returns canned replies based on the prompt (see `RouterGraphTest`), or the sample's own `placeholder()`.
 - Cover the happy path and at least one edge case: a loop limit, an alternate route, or a tool's edge input.
 - For tool examples, unit-test the tool class directly. Do not test the AI Service wiring, because that needs a real model.
 
@@ -58,10 +59,12 @@ Add a row to the **Examples** table in `README.md`:
 | `pkg.ClassName` | What it shows | `./mvnw exec:java -Dexec.mainClass=com.learning.agents.pkg.ClassName` |
 ```
 
-If the example needs a specific kind of model (for example tool calling or JSON mode), say so in that row.
+Put placeholder-backed samples in the matching table under "Agent-pattern samples" or "More agent patterns". If the example needs a specific kind of model (for example tool calling or JSON mode), say so in that row.
+
+Add a chapter for it to `docs/agent-concepts.md` (idea, how the sample does it, what to look for, try this, in production), list it in the guide's contents, and place it in a stage of the guide's "Suggested reading order".
 
 ## 5. Verify
 
 1. Run `./mvnw -q test`. It must pass.
-2. If Ollama is reachable (`curl -s localhost:11434/api/tags`), run the example once with `./mvnw -q exec:java -Dexec.mainClass=...` and show the user the output. If Ollama isn't reachable, say that the live run was skipped.
+2. Run the example once with the placeholder (`./mvnw -q exec:java -Dexec.mainClass=...`) and show the user the output. Only if the user asks for a live run and Ollama is reachable (`curl -s localhost:11434/api/tags`), run it again with `LLM_BACKEND=ollama`.
 3. Report the new files, how to run the example, and what to look for in its output.

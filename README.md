@@ -42,20 +42,21 @@ These ten samples run **without Ollama**: each one ships a scripted placeholder 
 and read its output right away. Set `LLM_BACKEND=ollama` to send the same prompts to a real model. They use plain-text
 prompts only, with no native tool calling, so any instruction-following model works, including Gemma.
 
-Suggested reading order, simplest first:
+They appear below in the order of the guide's [staged reading path](docs/agent-concepts.md#suggested-reading-order)
+(stages 2 to 4); the Guide column links each sample's chapter.
 
-| # | Example | Concept | Run |
-|---|---|---|---|
-| 1 | `graph.PromptChainingGraph` | **Prompt chaining**: a fixed outline → draft → polish chain, with a plain-code gate that retries a bad outline | `./mvnw exec:java -Dexec.mainClass=com.learning.agents.graph.PromptChainingGraph` |
-| 2 | `graph.RouterGraph` | **Routing**: a classifier call picks a specialist prompt; unexpected labels fall back to a safe default | `./mvnw exec:java -Dexec.mainClass=com.learning.agents.graph.RouterGraph` |
-| 3 | `chat.StructuredOutputAgent` | **Structured output**: ask for JSON, parse and validate it into a record, and send the error back so the model can repair it | `./mvnw exec:java -Dexec.mainClass=com.learning.agents.chat.StructuredOutputAgent` |
-| 4 | `chat.ConversationMemoryAgent` | **Memory**: keep recent turns verbatim and fold older ones into an LLM-written running summary | `./mvnw exec:java -Dexec.mainClass=com.learning.agents.chat.ConversationMemoryAgent` |
-| 5 | `rag.RagAgent` | **RAG**: TF-IDF retrieval over a small handbook, grounded answers with `[doc-id]` citations, and "I don't know" with no LLM call when nothing matches | `./mvnw exec:java -Dexec.mainClass=com.learning.agents.rag.RagAgent` |
-| 6 | `chat.GuardrailsAgent` | **Guardrails**: input checks (length, prompt injection, blocked topics) before the call, output checks (PII redaction, system-prompt leaks) after it | `./mvnw exec:java -Dexec.mainClass=com.learning.agents.chat.GuardrailsAgent` |
-| 7 | `chat.SelfConsistencyAgent` | **Self-consistency and parallel calls**: sample the same question 5 times on virtual threads and take a majority vote (raise the temperature for real models) | `./mvnw exec:java -Dexec.mainClass=com.learning.agents.chat.SelfConsistencyAgent` |
-| 8 | `graph.OrchestratorWorkersGraph` | **Orchestrator-workers**: the LLM writes the plan at run time, one worker per subtask, then a synthesizer merges the results | `./mvnw exec:java -Dexec.mainClass=com.learning.agents.graph.OrchestratorWorkersGraph` |
-| 9 | `graph.SupervisorGraph` | **Multi-agent supervisor**: researcher, writer and critic agents share a scratchpad, and a supervisor picks who acts next until `FINISH` | `./mvnw exec:java -Dexec.mainClass=com.learning.agents.graph.SupervisorGraph` |
-| 10 | `graph.HumanApprovalGraph` | **Human in the loop**: a checkpointer plus `interruptBefore` pauses the graph so you approve the action on the console before it runs | `./mvnw exec:java -Dexec.mainClass=com.learning.agents.graph.HumanApprovalGraph` |
+| Stage | Guide | Example | Concept | Run |
+|---|---|---|---|---|
+| 2 | [ch. 10](docs/agent-concepts.md#10-structured-output--chatstructuredoutputagent) | `chat.StructuredOutputAgent` | **Structured output**: ask for JSON, parse and validate it into a record, and send the error back so the model can repair it | `./mvnw exec:java -Dexec.mainClass=com.learning.agents.chat.StructuredOutputAgent` |
+| 2 | [ch. 13](docs/agent-concepts.md#13-guardrails--chatguardrailsagent) | `chat.GuardrailsAgent` | **Guardrails**: input checks (length, prompt injection, blocked topics) before the call, output checks (PII redaction, system-prompt leaks) after it | `./mvnw exec:java -Dexec.mainClass=com.learning.agents.chat.GuardrailsAgent` |
+| 2 | [ch. 11](docs/agent-concepts.md#11-conversation-memory--chatconversationmemoryagent) | `chat.ConversationMemoryAgent` | **Memory**: keep recent turns verbatim and fold older ones into an LLM-written running summary | `./mvnw exec:java -Dexec.mainClass=com.learning.agents.chat.ConversationMemoryAgent` |
+| 2 | [ch. 12](docs/agent-concepts.md#12-retrieval-augmented-generation--ragragagent) | `rag.RagAgent` | **RAG**: TF-IDF retrieval over a small handbook, grounded answers with `[doc-id]` citations, and "I don't know" with no LLM call when nothing matches | `./mvnw exec:java -Dexec.mainClass=com.learning.agents.rag.RagAgent` |
+| 3 | [ch. 5](docs/agent-concepts.md#5-prompt-chaining--graphpromptchaininggraph) | `graph.PromptChainingGraph` | **Prompt chaining**: a fixed outline → draft → polish chain, with a plain-code gate that retries a bad outline | `./mvnw exec:java -Dexec.mainClass=com.learning.agents.graph.PromptChainingGraph` |
+| 3 | [ch. 6](docs/agent-concepts.md#6-routing--graphroutergraph) | `graph.RouterGraph` | **Routing**: a classifier call picks a specialist prompt; unexpected labels fall back to a safe default | `./mvnw exec:java -Dexec.mainClass=com.learning.agents.graph.RouterGraph` |
+| 3 | [ch. 7](docs/agent-concepts.md#7-orchestrator-and-workers--graphorchestratorworkersgraph) | `graph.OrchestratorWorkersGraph` | **Orchestrator-workers**: the LLM writes the plan at run time, one worker per subtask, then a synthesizer merges the results | `./mvnw exec:java -Dexec.mainClass=com.learning.agents.graph.OrchestratorWorkersGraph` |
+| 3 | [ch. 8](docs/agent-concepts.md#8-multi-agent-supervisor--graphsupervisorgraph) | `graph.SupervisorGraph` | **Multi-agent supervisor**: researcher, writer and critic agents share a scratchpad, and a supervisor picks who acts next until `FINISH` | `./mvnw exec:java -Dexec.mainClass=com.learning.agents.graph.SupervisorGraph` |
+| 3 | [ch. 9](docs/agent-concepts.md#9-human-in-the-loop--graphhumanapprovalgraph) | `graph.HumanApprovalGraph` | **Human in the loop**: a checkpointer plus `interruptBefore` pauses the graph so you approve the action on the console before it runs | `./mvnw exec:java -Dexec.mainClass=com.learning.agents.graph.HumanApprovalGraph` |
+| 4 | [ch. 14](docs/agent-concepts.md#14-self-consistency-and-parallel-calls--chatselfconsistencyagent) | `chat.SelfConsistencyAgent` | **Self-consistency and parallel calls**: sample the same question 5 times on virtual threads and take a majority vote (raise the temperature for real models) | `./mvnw exec:java -Dexec.mainClass=com.learning.agents.chat.SelfConsistencyAgent` |
 
 ### More agent patterns
 

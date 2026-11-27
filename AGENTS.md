@@ -45,6 +45,9 @@ Read from environment variables in `com.learning.agents.OllamaConfig`:
 | `LLM_BACKEND` | `placeholder`, read by `com.learning.agents.llm.LlmProvider`; `ollama` switches the agent-pattern samples to a real model |
 | `OLLAMA_EMBEDDING_MODEL` | `nomic-embed-text`, used by `OllamaConfig.embeddingModel()` |
 
+Two samples read their own variables: `CASCADE_SMALL_MODEL`, `CASCADE_LARGE_MODEL` and `CASCADE_FALLBACK_MODEL`
+(`ops.ModelCascade`, default `OLLAMA_MODEL`) and `AGENT_MEMORY_FILE` (`memory.LongTermMemoryAgent`); see `README.md`.
+
 `tools.ToolCallingAgent` needs a model that supports native **tool calling** (e.g. `llama3.1`, `qwen3`, `mistral`).
 The other samples, including all graphs, use plain-text prompts and work with any instruction-following model (e.g. `gemma3`).
 Check that the server is up with `curl localhost:11434/api/tags`.
@@ -54,7 +57,8 @@ Check that the server is up with `curl localhost:11434/api/tags`.
 ```
 src/main/java/com/learning/agents/
   OllamaConfig.java          # the single place that builds Ollama models
-  llm/                       # LlmProvider, ScriptedLlm, HashingEmbeddingModel, PromptText (escaping), TextLists (list parsing)
+  llm/                       # LlmProvider, ScriptedLlm, HashingEmbeddingModel, PromptText (escaping), TextLists (list parsing),
+                             # Replies (labelled-reply parsing), StreamingLlm and OllamaStreamingLlm (token streaming)
   chat/                      # prompt -> reply patterns: memory, structured output, guardrails, voting
   tools/                     # LangChain4j AI Services + @Tool examples, tool retrieval; tools/mcp/ MCP client + demo server
   graph/                     # LangGraph4j StateGraph workflows
