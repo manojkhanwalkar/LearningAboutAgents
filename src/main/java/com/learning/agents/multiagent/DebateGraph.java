@@ -13,6 +13,7 @@ import org.bsc.langgraph4j.StateGraph;
 import java.util.Locale;
 import java.util.Map;
 import java.util.function.Function;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import static org.bsc.langgraph4j.StateGraph.END;
@@ -60,7 +61,7 @@ public class DebateGraph {
                             Debate:
                             %s""".formatted(motion(state), PromptText.escape(String.join("\n", state.transcript()))));
                     var line = Replies.lineAfter(verdict, "WINNER:");
-                    var m = line.map(SIDE::matcher).filter(java.util.regex.Matcher::find);
+                    var m = line.map(SIDE::matcher).filter(Matcher::find);
                     if (m.isEmpty()) {
                         return Map.of(DebateState.WINNER, "UNDECIDED", DebateState.REASON, "the judge's verdict was unreadable");
                     }

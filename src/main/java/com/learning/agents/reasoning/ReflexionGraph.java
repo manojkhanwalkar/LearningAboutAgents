@@ -111,7 +111,7 @@ public class ReflexionGraph {
         for (String part : parts) {
             try {
                 numbers.add(Integer.parseInt(part));
-            } catch (NumberFormatException e) {
+            } catch (NumberFormatException _) {
                 return Optional.of("'" + part + "' is not a whole number");
             }
         }

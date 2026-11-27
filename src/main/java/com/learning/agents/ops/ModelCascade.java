@@ -19,6 +19,7 @@ import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 import java.util.random.RandomGenerator;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
@@ -191,7 +192,7 @@ public class ModelCascade {
     static Optional<Integer> confidence(String reply) {
         return Replies.lineAfter(reply, "CONFIDENCE:")
                 .map(LEADING_NUMBER::matcher)
-                .filter(java.util.regex.Matcher::find)
+                .filter(Matcher::find)
                 .map(m -> Math.min(100, Integer.parseInt(m.group(1))));
     }
 
