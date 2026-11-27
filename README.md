@@ -22,6 +22,9 @@ The unit tests use a fake LLM, so they don't need Ollama. `./mvnw verify` also w
 
 ## Examples
 
+New to agents? Read [**Agent concepts, one sample at a time**](docs/agent-concepts.md). It explains the idea behind
+each sample, how the code implements it, what to look for when you run it, and what to try next.
+
 | Example | What it shows | Run |
 |---|---|---|
 | `chat.HelloOllama` | Single prompt → reply with `OllamaChatModel` | `./mvnw exec:java` |
