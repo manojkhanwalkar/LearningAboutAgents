@@ -57,7 +57,11 @@ public final class OllamaStreamingLlm implements StreamingLlm {
         model.chat(prompt, new StreamingChatResponseHandler() {
             @Override
             public void onPartialResponse(PartialResponse partial, PartialResponseContext context) {
-                handle.compareAndSet(null, context.streamingHandle());
+                if (handle.compareAndSet(null, context.streamingHandle()) && abandoned.get()) {
+                    // The caller gave up before the first token brought this handle, so abandon() found none to cancel.
+                    context.streamingHandle().cancel();
+                    return;
+                }
                 deliver(partial.text());
             }
 
@@ -96,7 +100,11 @@ public final class OllamaStreamingLlm implements StreamingLlm {
         }
     }
 
-    /** Stops forwarding tokens and asks the client to cancel the request, if it has given us a handle yet. */
+    /**
+     * Stops forwarding tokens and asks the client to cancel the request, if it has given us a handle yet. If not, the
+     * callback that brings the handle cancels it: it sets the handle before reading {@code abandoned}, and this sets
+     * {@code abandoned} before reading the handle, so at least one side always sees the other.
+     */
     private static void abandon(AtomicBoolean abandoned, AtomicReference<StreamingHandle> handle) {
         abandoned.set(true);
         StreamingHandle h = handle.get();

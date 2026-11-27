@@ -96,6 +96,44 @@ class StreamingLlmTest {
     }
 
     @Test
+    void aStreamAbandonedBeforeItsFirstTokenIsCancelledWhenTheHandleArrives() throws Exception {
+        // The handle only comes with the first token. If the timeout fires before that (say, the model is still
+        // loading), the stream must still be cancelled once the first token shows up, not run to the end unseen.
+        var cancelled = new java.util.concurrent.atomic.AtomicBoolean();
+        var timedOut = new java.util.concurrent.CountDownLatch(1);
+        var firstTokenHandled = new java.util.concurrent.CountDownLatch(1);
+        List<String> tokens = java.util.Collections.synchronizedList(new ArrayList<>());
+        var llm = new OllamaStreamingLlm(fake(handler -> {
+            var context = new dev.langchain4j.model.chat.response.PartialResponseContext(
+                    new dev.langchain4j.model.chat.response.StreamingHandle() {
+                        @Override
+                        public void cancel() {
+                            cancelled.set(true);
+                        }
+
+                        @Override
+                        public boolean isCancelled() {
+                            return cancelled.get();
+                        }
+                    });
+            try {
+                timedOut.await();   // the first token arrives only after the caller has given up
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+            handler.onPartialResponse(new dev.langchain4j.model.chat.response.PartialResponse("late"), context);
+            firstTokenHandled.countDown();
+        }), Duration.ofMillis(50));
+
+        assertThrows(IllegalStateException.class, () -> llm.stream("hi", tokens::add));
+        timedOut.countDown();
+        assertTrue(firstTokenHandled.await(5, java.util.concurrent.TimeUnit.SECONDS));
+
+        assertTrue(cancelled.get(), "the request must be cancelled once its handle arrives");
+        assertEquals(List.of(), tokens);
+    }
+
+    @Test
     void anEmptyReplyBecomesAnEmptyString() {
         // A reply made only of tool calls has no text: aiMessage().text() is null.
         var toolOnly = AiMessage.from(List.of(dev.langchain4j.agent.tool.ToolExecutionRequest.builder().name("t").arguments("{}").build()));
