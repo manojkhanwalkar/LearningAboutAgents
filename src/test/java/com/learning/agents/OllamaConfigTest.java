@@ -33,6 +33,14 @@ class OllamaConfigTest {
     }
 
     @Test
+    void blankOrMissingVariablesFallBackToTheDefault() {
+        assertEquals("d", OllamaConfig.orDefault(null, "d"));
+        assertEquals("d", OllamaConfig.orDefault("  ", "d"));
+        assertEquals("gemma3", OllamaConfig.orDefault("gemma3", "d"));
+        assertEquals(OllamaConfig.modelName(), OllamaConfig.modelName("LEARNING_AGENTS_UNSET_MODEL_VARIABLE"));
+    }
+
+    @Test
     void factoriesBuildClientsWithoutConnecting() {
         assertNotNull(OllamaConfig.chatModel());
         assertNotNull(OllamaConfig.chatModel("gemma3"));

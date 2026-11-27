@@ -230,9 +230,9 @@ public class ModelCascade {
     }
 
     public static void main(String[] args) throws Exception {
-        String smallName = System.getenv().getOrDefault("CASCADE_SMALL_MODEL", OllamaConfig.modelName());
-        String largeName = System.getenv().getOrDefault("CASCADE_LARGE_MODEL", OllamaConfig.modelName());
-        String fallbackName = System.getenv().getOrDefault("CASCADE_FALLBACK_MODEL", OllamaConfig.modelName());
+        String smallName = OllamaConfig.modelName("CASCADE_SMALL_MODEL");
+        String largeName = OllamaConfig.modelName("CASCADE_LARGE_MODEL");
+        String fallbackName = OllamaConfig.modelName("CASCADE_FALLBACK_MODEL");
         var cascade = new ModelCascade(
                 LlmProvider.resolve(smallPlaceholder(), () -> OllamaConfig.chatModel(smallName, 0)::chat),
                 LlmProvider.resolve(largePlaceholder(), () -> OllamaConfig.chatModel(largeName, 0)::chat),

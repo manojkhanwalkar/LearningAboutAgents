@@ -40,6 +40,14 @@ public final class OllamaConfig {
         return env("OLLAMA_MODEL", DEFAULT_MODEL);
     }
 
+    /**
+     * The model named by {@code envVar}, or {@link #modelName()} when it is unset or blank, for samples that let each
+     * role pick its own model (e.g. {@code CASCADE_SMALL_MODEL}).
+     */
+    public static String modelName(String envVar) {
+        return env(envVar, modelName());
+    }
+
     public static String embeddingModelName() {
         return env("OLLAMA_EMBEDDING_MODEL", DEFAULT_EMBEDDING_MODEL);
     }
@@ -100,7 +108,11 @@ public final class OllamaConfig {
     }
 
     private static String env(String name, String defaultValue) {
-        String value = System.getenv(name);
+        return orDefault(System.getenv(name), defaultValue);
+    }
+
+    /** {@code value}, or {@code defaultValue} when it is null or blank: an empty variable means "not set". */
+    static String orDefault(String value, String defaultValue) {
         return value == null || value.isBlank() ? defaultValue : value;
     }
 }

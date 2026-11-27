@@ -1,6 +1,7 @@
 package com.learning.agents.rag;
 
 import com.learning.agents.llm.LlmProvider;
+import com.learning.agents.llm.PromptText;
 import com.learning.agents.llm.ScriptedLlm;
 import com.learning.agents.rag.KeywordRetriever.Doc;
 import com.learning.agents.rag.KeywordRetriever.Hit;
@@ -53,10 +54,13 @@ public class RagAgent {
         return new Answer(llm.apply(prompt(question, hits)).strip(), hits);
     }
 
-    /** Builds the grounded prompt: the retrieved documents in {@code <doc id>} tags, citation and refusal rules, then the question. */
+    /**
+     * Builds the grounded prompt: the retrieved documents in {@code <doc id>} tags (text escaped, so a document can't
+     * close its tag and pose as instructions), citation and refusal rules, then the question.
+     */
     static String prompt(String question, List<Hit> hits) {
         String context = hits.stream()
-                .map(hit -> "<doc id=\"%s\">%s</doc>".formatted(hit.doc().id(), hit.doc().text()))
+                .map(hit -> "<doc id=\"%s\">%s</doc>".formatted(hit.doc().id(), PromptText.escape(hit.doc().text())))
                 .collect(Collectors.joining("\n"));
         return """
                 Answer the question using ONLY the documents below. Cite the id of each document you use, like [doc-id].

@@ -480,8 +480,8 @@ without retraining.
 **How the sample does it.**
 - `KeywordRetriever` ranks a small handbook by TF-IDF cosine similarity: words that are rare across documents count
   more.
-- The top `TOP_K` (2) documents go into `<doc id="...">` tags, with instructions to cite `[doc-id]` and a fixed
-  refusal sentence.
+- The top `TOP_K` (2) documents go into `<doc id="...">` tags, their text escaped with `PromptText.escape` so a
+  document can't close its tag, with instructions to cite `[doc-id]` and a fixed refusal sentence.
 - If retrieval finds nothing, the agent answers "I don't know" **without calling the model**, the cheapest defence
   against a confident made-up answer.
 
