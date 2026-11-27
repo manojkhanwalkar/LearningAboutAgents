@@ -117,7 +117,8 @@ workflow pattern adds one idea to the previous one. Chapters 10–14 are indepen
 Everything else in this repository is code around this one call.
 
 **How the sample does it.** `OllamaConfig.chatModel()` builds a LangChain4j `OllamaChatModel` from environment
-variables, with a low temperature (0.2) and a 2-minute timeout. `model.chat(prompt)` returns the reply text.
+variables, with a low temperature (0.2), a 10-second connect timeout and a 2-minute reply timeout.
+`model.chat(prompt)` returns the reply text.
 
 **What to look for.** The model name and the reply. Run it twice: with temperature 0.2 the answers are similar but
 rarely identical.
@@ -126,8 +127,9 @@ rarely identical.
 - Change the temperature in `OllamaConfig` to 1.0 and compare a few runs.
 - Ask the same question to two different models (`OLLAMA_MODEL=...`).
 
-**In production.** Every outbound call needs a timeout; this one has 2 minutes. Never hard-code the URL or the
-model name; here they come from the environment.
+**In production.** Every outbound call needs a timeout; this one has 2 minutes. Give connecting its own short limit
+(LangChain4j's `timeout(...)` sets both to one value, so an unreachable host would hold each retry for the full 2
+minutes). Never hard-code the URL or the model name; here they come from the environment.
 
 ## 2. Native tool calling — `tools.ToolCallingAgent`
 
