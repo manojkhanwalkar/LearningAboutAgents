@@ -40,6 +40,15 @@ class LlmProviderTest {
     }
 
     @Test
+    void resolveEmbeddingsUsesThePlaceholderByDefault() {
+        var placeholderEmbeddings = new HashingEmbeddingModel();
+        String backend = System.getenv(LlmProvider.ENV);
+        if (backend == null || backend.isBlank()) {
+            assertSame(placeholderEmbeddings, LlmProvider.resolveEmbeddings(placeholderEmbeddings));
+        }
+    }
+
+    @Test
     void scriptedLlmMatchesFirstRuleAndFallsBack() {
         var llm = ScriptedLlm.create()
                 .when("alpha", "first")

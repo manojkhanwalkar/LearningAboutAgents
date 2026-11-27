@@ -1,6 +1,7 @@
 package com.learning.agents.llm;
 
 import com.learning.agents.OllamaConfig;
+import dev.langchain4j.model.embedding.EmbeddingModel;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -31,24 +32,37 @@ public final class LlmProvider {
 
     /** Returns the backend named by {@value #ENV}, falling back to {@code placeholder}. */
     public static Function<String, String> resolve(Function<String, String> placeholder) {
-        return resolve(System.getenv(ENV), placeholder, () -> OllamaConfig.chatModel()::chat);
+        return resolve(System.getenv(ENV), placeholder, () -> {
+            log.info("Chat model: {}", OllamaConfig.modelName());
+            return OllamaConfig.chatModel()::chat;
+        });
     }
 
     /**
-     * Same as {@link #resolve(Function)} with the backend name and the Ollama factory passed in, so it can be tested.
+     * Returns the embedding model for the backend named by {@value #ENV}: {@code placeholder} (usually a
+     * {@link HashingEmbeddingModel}), or {@link OllamaConfig#embeddingModel()} when it is {@code ollama}.
+     */
+    public static EmbeddingModel resolveEmbeddings(EmbeddingModel placeholder) {
+        return resolve(System.getenv(ENV), placeholder, () -> {
+            log.info("Embedding model: {}", OllamaConfig.embeddingModelName());
+            return OllamaConfig.embeddingModel();
+        });
+    }
+
+    /**
+     * Picks {@code placeholder} or the Ollama-backed value, given the backend name; package-private so it can be tested.
      *
      * @throws IllegalArgumentException if {@code backend} is not a known name
      */
-    static Function<String, String> resolve(String backend, Function<String, String> placeholder,
-                                            Supplier<Function<String, String>> ollama) {
+    static <T> T resolve(String backend, T placeholder, Supplier<T> ollama) {
         String name = backend == null || backend.isBlank() ? "placeholder" : backend.strip().toLowerCase(Locale.ROOT);
         return switch (name) {
             case "placeholder" -> {
-                log.info("Using the scripted placeholder LLM. Set {}=ollama to call a real model.", ENV);
+                log.info("Using the placeholder model. Set {}=ollama to call a real model.", ENV);
                 yield placeholder;
             }
             case "ollama" -> {
-                log.info("Using Ollama model '{}' at {}", OllamaConfig.modelName(), OllamaConfig.baseUrl());
+                log.info("Using Ollama at {}", OllamaConfig.baseUrl());
                 yield ollama.get();
             }
             default -> throw new IllegalArgumentException(

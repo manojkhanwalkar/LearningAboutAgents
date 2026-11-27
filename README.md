@@ -55,6 +55,19 @@ Suggested reading order, simplest first:
 | 9 | `graph.SupervisorGraph` | **Multi-agent supervisor**: researcher, writer and critic agents share a scratchpad, and a supervisor picks who acts next until `FINISH` | `./mvnw exec:java -Dexec.mainClass=com.learning.agents.graph.SupervisorGraph` |
 | 10 | `graph.HumanApprovalGraph` | **Human in the loop**: a checkpointer plus `interruptBefore` pauses the graph so you approve the action on the console before it runs | `./mvnw exec:java -Dexec.mainClass=com.learning.agents.graph.HumanApprovalGraph` |
 
+### More agent patterns
+
+Same rules as above: placeholder by default, `LLM_BACKEND=ollama` for a real model. Samples that embed text use
+`HashingEmbeddingModel` as a placeholder (it matches shared words only) and `OLLAMA_EMBEDDING_MODEL` with Ollama.
+
+**Retrieval and memory**
+
+| Example | Concept | Run |
+|---|---|---|
+| `rag.EmbeddingRagAgent` | **Embedding RAG**: LangChain4j document splitter, embedding model and `InMemoryEmbeddingStore`, plus LLM query rewriting and reranking | `./mvnw exec:java -Dexec.mainClass=com.learning.agents.rag.EmbeddingRagAgent` |
+| `rag.CorrectiveRagGraph` | **Corrective RAG**: an LLM grades retrieved chunks, and if none help, rewrites the query and searches again before answering or giving up | `./mvnw exec:java -Dexec.mainClass=com.learning.agents.rag.CorrectiveRagGraph` |
+| `memory.LongTermMemoryAgent` | **Long-term memory**: facts extracted from user messages are saved to a JSON file and recalled by similarity in a later session, with secret filtering and `forget` | `./mvnw exec:java -Dexec.mainClass=com.learning.agents.memory.LongTermMemoryAgent` |
+
 Running them against your Ollama server, for example on another machine on your network:
 
 ```bash
@@ -71,7 +84,9 @@ gets the fallback reply. Use `LLM_BACKEND=ollama` to try your own prompts.
 |---|---|
 | `OLLAMA_BASE_URL` | `http://localhost:11434` |
 | `OLLAMA_MODEL` | `llama3.1` |
-| `LLM_BACKEND` | `placeholder` (the agent-pattern samples only; `ollama` uses the two settings above) |
+| `LLM_BACKEND` | `placeholder` (the agent-pattern samples only; `ollama` uses the settings above) |
+| `OLLAMA_EMBEDDING_MODEL` | `nomic-embed-text` (embedding samples, with `LLM_BACKEND=ollama`; `ollama pull nomic-embed-text`) |
+| `AGENT_MEMORY_FILE` | a temporary file (`LongTermMemoryAgent`; set it to keep memory between runs) |
 
 ```bash
 OLLAMA_MODEL=qwen3 ./mvnw exec:java -Dexec.mainClass=com.learning.agents.tools.ToolCallingAgent
