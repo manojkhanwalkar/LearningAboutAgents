@@ -1,6 +1,7 @@
 package com.learning.agents.chat;
 
 import com.learning.agents.llm.LlmProvider;
+import com.learning.agents.llm.PromptText;
 import com.learning.agents.llm.ScriptedLlm;
 
 import java.text.Normalizer;
@@ -64,13 +65,8 @@ public class GuardrailsAgent {
         if (!inputViolations.isEmpty()) {
             return new Outcome(false, "Sorry, I can't help with that request.", inputViolations);
         }
-        String raw = llm.apply(SYSTEM_PROMPT + "\n<user>" + escape(userMessage) + "</user>");
+        String raw = llm.apply(SYSTEM_PROMPT + "\n<user>" + PromptText.escape(userMessage) + "</user>");
         return checkOutput(raw);
-    }
-
-    /** Escapes the delimiter characters, so text like {@code </user >} stays inside the data block. */
-    static String escape(String userText) {
-        return userText.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
     }
 
     /** Folds the tricks that defeat a plain regex: compatibility characters, invisible characters, extra whitespace. */
