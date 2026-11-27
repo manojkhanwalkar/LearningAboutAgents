@@ -27,6 +27,10 @@ what tends to go wrong in real systems. Read it next to the code: every chapter 
   15. [Embedding RAG with rewriting and reranking](#15-embedding-rag-with-rewriting-and-reranking--ragembeddingragagent)
   16. [Corrective RAG](#16-corrective-rag--ragcorrectiveraggraph)
   17. [Long-term memory](#17-long-term-memory--memorylongtermmemoryagent)
+- Reasoning and planning
+  18. [Plan-and-execute with replanning](#18-plan-and-execute-with-replanning--reasoningplanexecutegraph)
+  19. [Reflexion](#19-reflexion--reasoningreflexiongraph)
+  20. [Tree of Thoughts](#20-tree-of-thoughts--reasoningtreeofthoughtsagent)
 - [Glossary](#glossary)
 
 ---
@@ -88,7 +92,7 @@ Two LangGraph4j details that trip people up:
 ## Suggested reading order
 
 Start with chapters 1–4 to see a model call, tools, a loop and the ReAct pattern. Then read 5–9 in order: each
-workflow pattern adds one idea to the previous one. Chapters 10–14 are independent; read them when you need them. Read 15–17 after chapter 12.
+workflow pattern adds one idea to the previous one. Chapters 10–14 are independent; read them when you need them. Read 15–17 after chapter 12, and 18–20 after chapter 7.
 
 ---
 
@@ -599,6 +603,108 @@ With the placeholder embeddings, recall needs a shared word ("diet"); a real emb
 
 ---
 
+## 18. Plan-and-execute with replanning — `reasoning.PlanExecuteGraph`
+
+**The idea.** Chapter 7 planned once and then executed blindly. In the real world a step often reveals something
+that changes the plan: you call the restaurant and it's closed. *Plan-and-execute with replanning* writes a plan,
+does **one** step, and then asks the model to rewrite the *remaining* plan in light of what it learned, or to
+declare the goal met.
+
+**How the sample does it.**
+- `planner` writes a numbered plan, parsed by `TextLists.items` and capped at `MAX_PLAN_STEPS` (5).
+- `executor` does only the first step and records "step → result" in `PAST_STEPS`.
+- `replanner` sees the goal, everything done so far and the old remaining steps. It replies either `FINAL: <answer>`
+  or a new numbered list of remaining steps. Each plan version is kept in `PLAN_HISTORY`, so you can see how the plan
+  changed.
+- `afterReplan` routes on: an answer goes to END; otherwise more steps go back to `executor`; and an empty plan, or
+  `MAX_STEPS` (6) executed, goes to `finish`, which always writes a summary answer, so a run never ends with nothing.
+
+```
+START → planner → executor → replanner ─┬─ FINAL: answer → END
+                     ↑                  ├─ new plan → executor
+                     └──────────────────┘
+                                        └─ plan empty / step limit → finish → END
+```
+
+**What to look for.**
+- Plan v1 books "Steak Corner".
+- The first step finds that two people are vegan.
+- Plan v2 switches to "Green Fork". Three steps later the replanner says `FINAL:`.
+
+**Try this.**
+- Make the booking step fail ("Green Fork is full") and write a replanner rule that recovers.
+- Compare the number of model calls with chapter 7: replanning costs one extra call per step.
+
+**In production.**
+- Replanning is what makes long tasks robust, but each step now costs two calls (execute and replan). Cap the steps.
+- Keep the past-steps list compact, because it grows with every step.
+
+## 19. Reflexion — `reasoning.ReflexionGraph`
+
+**The idea.** Reflexion (Shinn et al., 2023) is learning from failure, *in words*. After a failed attempt the model
+writes a short lesson ("15 is not prime, check for divisors"), and every later attempt is shown all the lessons so
+far. The key ingredient is an **objective judge**, here a checker in code, so the agent learns from facts rather
+than from its own opinion.
+
+**How the sample does it.**
+- The task: list three primes above 10, in ascending order.
+- `checkPrimes` checks, in plain Java: exactly three whole numbers, each above 10, each prime, strictly ascending. It
+  returns a precise error message.
+- `attempt` lists every lesson so far in the prompt. `check` runs the checker and logs the verdict. On failure,
+  `reflect` turns the error into one general lesson.
+- `MAX_ATTEMPTS` (3) caps the loop.
+- `run(..., priorLessons)` starts a new task with lessons from earlier tasks. This is the "memory" half of Reflexion:
+  lessons outlive the task.
+
+```
+START → attempt → check ─┬─ passed / attempt limit → END
+           ↑             └─ failed → reflect ─┐
+           └──────────────────────────────────┘
+```
+
+**What to look for.**
+- Attempt 1 includes 15 ("15 is not prime").
+- Attempt 2 has right numbers in the wrong order.
+- Attempt 3 passes. You will see two lessons, each fixing one mistake.
+
+**Try this.**
+- Pass the lessons from one run into a second, similar task and see it pass first time.
+- Replace the checker with an LLM judge and notice how much less reliable the loop becomes.
+
+**In production.**
+- Reflexion shines where a reliable checker exists: unit tests for code, a schema for data, a simulator for plans.
+- Keep the lessons list short, or summarise it, because it is in every prompt.
+
+## 20. Tree of Thoughts — `reasoning.TreeOfThoughtsAgent`
+
+**The idea.** A chain of thought commits to one line of reasoning, and if an early step is wrong, everything after it
+is wasted. *Tree of Thoughts* (Yao et al., 2023) explores several partial solutions at once: generate a few next
+steps, evaluate how promising each one looks, keep the best, and repeat. It is search, with the model as both the
+move generator and the evaluator.
+
+**How the sample does it** on the Game of 24 (use 4, 9, 10 and 13 with + − × ÷ to make 24):
+- **Propose.** For each kept position, the model suggests up to `MAX_PROPOSALS` (5) steps like "10 - 4 = 6".
+- **Verify.** `parseStep` re-computes each step in code. The operands must be available numbers, the claimed result
+  must be right, and division must be exact. The placeholder deliberately proposes "9 * 10 = 99", which is rejected.
+- **Rate.** The model rates each new position as "sure" (3), "likely" (2) or "impossible" (0, pruned). Positions with
+  the same numbers, reached by different paths, are rated once.
+- **Select.** The best `BEAM_WIDTH` (2) positions go on to the next depth. After three steps one number is left, and
+  code checks whether it is 24.
+
+**What to look for.** One trace line per depth, showing how many steps survived verification and which positions were
+kept with their scores, then the solution: `10 - 4 = 6`, `13 - 9 = 4`, `4 * 6 = 24` (the first two in either order).
+
+**Try this.**
+- Set `BEAM_WIDTH` to 1, which is a plain greedy chain, and find a puzzle where that fails but width 2 succeeds.
+- Count the model calls; search is expensive.
+
+**In production.**
+- Tree search multiplies cost: proposals × positions × depth. Use it for hard problems with a cheap verifier (puzzles,
+  code that must compile, plans that a simulator can check).
+- Let code do everything code can do: verification, bookkeeping and the final check.
+
+---
+
 ## Glossary
 
 | Term | Meaning |
@@ -611,6 +717,8 @@ With the placeholder embeddings, recall needs a shared word ("diet"); a real emb
 | **Checkpointer** | Saves graph state after each step, so a run can pause, resume or be inspected |
 | **Embedding** | A vector representing text, where similar texts have nearby vectors |
 | **Reranking** | Re-scoring a few retrieved candidates with a slower, more accurate judge (here, the LLM) |
+| **Beam search** | Keep only the best *k* partial solutions at each step instead of exploring all of them |
+| **Replanning** | Rewriting the remaining plan after each step, using what that step revealed |
 | **Memory poisoning** | Planting text in an agent's stored memory so it is injected into later prompts |
 | **Grounding** | Making the model answer from supplied sources instead of from memory |
 | **Prompt injection** | Untrusted text (from a user, a document or a tool) that tries to override the instructions |

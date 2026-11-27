@@ -2,6 +2,7 @@ package com.learning.agents.graph;
 
 import com.learning.agents.llm.LlmProvider;
 import com.learning.agents.llm.ScriptedLlm;
+import com.learning.agents.llm.TextLists;
 import org.bsc.langgraph4j.CompiledGraph;
 import org.bsc.langgraph4j.GraphStateException;
 import org.bsc.langgraph4j.StateGraph;
@@ -87,11 +88,7 @@ public class OrchestratorWorkersGraph {
      * "Here are the subtasks:", and keeps at most {@link #MAX_SUBTASKS}.
      */
     static List<String> parsePlan(String plan) {
-        return plan.lines()
-                .map(line -> line.strip().replaceFirst("^([-*•]|\\d+[.)])\\s*", ""))
-                .filter(line -> !line.isBlank() && !line.endsWith(":"))
-                .limit(MAX_SUBTASKS)
-                .toList();
+        return TextLists.items(plan, MAX_SUBTASKS);
     }
 
     static String numbered(List<String> subtasks, List<String> results) {

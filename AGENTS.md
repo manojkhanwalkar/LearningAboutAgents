@@ -54,12 +54,13 @@ Check that the server is up with `curl localhost:11434/api/tags`.
 ```
 src/main/java/com/learning/agents/
   OllamaConfig.java          # the single place that builds Ollama models
-  llm/                       # LlmProvider (placeholder vs Ollama), ScriptedLlm (canned replies), HashingEmbeddingModel
+  llm/                       # LlmProvider, ScriptedLlm, HashingEmbeddingModel, PromptText (escaping), TextLists (list parsing)
   chat/                      # prompt -> reply patterns: memory, structured output, guardrails, voting
   tools/                     # LangChain4j AI Services + @Tool examples
   graph/                     # LangGraph4j StateGraph workflows
   rag/                       # retrieval-augmented generation (keyword, embedding and corrective RAG)
   memory/                    # long-term memory that persists across sessions
+  reasoning/                 # plan-and-execute, Reflexion, Tree of Thoughts
 src/test/java/...            # tests mirror main packages
 .claude/skills/              # Claude Code skills (e.g. new-agent-example scaffolds a new sample)
 ```
