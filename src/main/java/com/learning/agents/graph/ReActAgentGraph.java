@@ -43,10 +43,14 @@ public class ReActAgentGraph {
     private static final Pattern ACTION = Pattern.compile("Action:\\s*(\\w+)\\s*\\[(.*?)]", Pattern.DOTALL);
     private static final Pattern FINAL_ANSWER = Pattern.compile("Final Answer:\\s*(.*)", Pattern.DOTALL);
 
-    /** One parsed model reply. Exactly one of {@code action} or {@code answer} is set when the reply is well-formed. */
-    record Step(String thought, String action, String input, String answer) {
-        boolean isFinal() {
-            return answer != null;
+    /** One parsed model reply: a final answer, or an action to run (blank when the reply had no readable action). */
+    sealed interface Step {
+        String thought();
+
+        record FinalAnswer(String thought, String answer) implements Step {
+        }
+
+        record Action(String thought, String tool, String input) implements Step {
         }
     }
 
@@ -69,19 +73,18 @@ public class ReActAgentGraph {
                 // Reason: show the model the question plus the transcript so far, and parse its next step.
                 .addNode("reason", node_async(state -> {
                     String reply = truncateAtObservation(llm.apply(prompt(state, tools)));
-                    Step step = parse(reply);
                     int steps = state.steps() + 1;
-                    if (step.isFinal()) {
-                        return Map.of(
+                    return switch (parse(reply)) {
+                        case Step.FinalAnswer(_, var answer) -> Map.of(
                                 ReActState.TRANSCRIPT, reply,
-                                ReActState.ANSWER, step.answer(),
+                                ReActState.ANSWER, answer,
                                 ReActState.STEPS, steps);
-                    }
-                    return Map.of(
-                            ReActState.TRANSCRIPT, reply,
-                            ReActState.ACTION, step.action() == null ? "" : step.action(),
-                            ReActState.ACTION_INPUT, step.input() == null ? "" : step.input(),
-                            ReActState.STEPS, steps);
+                        case Step.Action(_, var tool, var input) -> Map.of(
+                                ReActState.TRANSCRIPT, reply,
+                                ReActState.ACTION, tool,
+                                ReActState.ACTION_INPUT, input,
+                                ReActState.STEPS, steps);
+                    };
                 }))
                 // Act: run the chosen tool and record what it returned as an Observation.
                 .addNode("act", node_async(state -> {
@@ -139,13 +142,13 @@ public class ReActAgentGraph {
         String t = thought.find() ? thought.group(1).strip() : "";
         var answer = FINAL_ANSWER.matcher(reply);
         if (answer.find()) {
-            return new Step(t, null, null, answer.group(1).strip());
+            return new Step.FinalAnswer(t, answer.group(1).strip());
         }
         var action = ACTION.matcher(reply);
         if (action.find()) {
-            return new Step(t, action.group(1).strip(), action.group(2).strip(), null);
+            return new Step.Action(t, action.group(1).strip(), action.group(2).strip());
         }
-        return new Step(t, null, null, null);
+        return new Step.Action(t, "", "");   // no readable action: the act node answers "Invalid action"
     }
 
     public static void main(String[] args) throws Exception {

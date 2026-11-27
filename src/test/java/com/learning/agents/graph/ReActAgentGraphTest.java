@@ -9,7 +9,6 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -88,11 +87,15 @@ class ReActAgentGraphTest {
 
     @Test
     void parseExtractsThoughtAndAction() {
-        var step = ReActAgentGraph.parse("Thought: need data\nAction: lookup[ Mount Everest ]");
-        assertEquals("need data", step.thought());
-        assertEquals("lookup", step.action());
-        assertEquals("Mount Everest", step.input());
-        assertNull(step.answer());
+        assertEquals(new ReActAgentGraph.Step.Action("need data", "lookup", "Mount Everest"),
+                ReActAgentGraph.parse("Thought: need data\nAction: lookup[ Mount Everest ]"));
+    }
+
+    @Test
+    void parseReadsAFinalAnswerAndTreatsAnUnreadableReplyAsABlankAction() {
+        assertEquals(new ReActAgentGraph.Step.FinalAnswer("done", "42"),
+                ReActAgentGraph.parse("Thought: done\nFinal Answer: 42"));
+        assertEquals(new ReActAgentGraph.Step.Action("", "", ""), ReActAgentGraph.parse("I am not sure."));
     }
 
     @Test
