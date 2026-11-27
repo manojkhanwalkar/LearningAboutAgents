@@ -27,6 +27,25 @@ class StructuredOutputAgentTest {
     }
 
     @Test
+    void repairPromptStillContainsTheReviewAndSchema() {
+        List<String> prompts = new ArrayList<>();
+        StructuredOutputAgent.extract(prompt -> {
+            prompts.add(prompt);
+            return "{}";
+        }, "The Kettle 3000 is loud");
+
+        assertTrue(prompts.get(1).contains("Review: <<<The Kettle 3000 is loud>>>"));
+        assertTrue(prompts.get(1).contains("\"rating\": integer 1-5"));
+        assertTrue(prompts.get(1).contains("Your previous reply was invalid"));
+    }
+
+    @Test
+    void wrongTypesAreRejectedNotCoerced() {
+        assertThrows(IllegalArgumentException.class, () -> StructuredOutputAgent.parse("{\"product\": \"p\", \"rating\": 4.9, \"sentiment\": \"neutral\"}"));
+        assertThrows(IllegalArgumentException.class, () -> StructuredOutputAgent.parse("{\"product\": \"p\", \"rating\": \"5\", \"sentiment\": \"neutral\"}"));
+    }
+
+    @Test
     void givesUpAfterMaxAttempts() {
         var result = StructuredOutputAgent.extract(prompt -> "not json at all", "review");
 

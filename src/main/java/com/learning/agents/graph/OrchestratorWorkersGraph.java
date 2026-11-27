@@ -82,11 +82,14 @@ public class OrchestratorWorkersGraph {
         return state.nextIndex() < state.subtasks().size() ? "worker" : "synthesize";
     }
 
-    /** Turns the orchestrator's reply into a clean list: drops blanks and list markers, keeps at most {@link #MAX_SUBTASKS}. */
+    /**
+     * Turns the orchestrator's reply into a clean list: drops blanks, list markers and preamble lines such as
+     * "Here are the subtasks:", and keeps at most {@link #MAX_SUBTASKS}.
+     */
     static List<String> parsePlan(String plan) {
         return plan.lines()
                 .map(line -> line.strip().replaceFirst("^([-*•]|\\d+[.)])\\s*", ""))
-                .filter(line -> !line.isBlank())
+                .filter(line -> !line.isBlank() && !line.endsWith(":"))
                 .limit(MAX_SUBTASKS)
                 .toList();
     }

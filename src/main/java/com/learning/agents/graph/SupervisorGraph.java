@@ -54,7 +54,7 @@ public class SupervisorGraph {
 
     private static final Set<String> AGENT_NAMES = AGENTS.stream().map(Agent::name).collect(Collectors.toUnmodifiableSet());
 
-    private static final Pattern NEXT_AGENT = Pattern.compile("NEXT:\\s*(\\w+)", Pattern.CASE_INSENSITIVE);
+    private static final Pattern WORD = Pattern.compile("\\w+");
 
     /**
      * Builds the team around a pluggable LLM so it can be tested without Ollama.
@@ -103,14 +103,23 @@ public class SupervisorGraph {
         return state.turns() >= MAX_TURNS ? FINISH : state.next();
     }
 
-    /** Reads "NEXT: agent" from the supervisor's reply; empty if the reply says FINISH or names an unknown agent. */
+    /**
+     * Reads "NEXT: agent" from the supervisor's reply: the first known agent name after {@code NEXT:}, so
+     * "NEXT: the writer" and "**NEXT:** writer" both work. Empty if there is no {@code NEXT:} or no known agent.
+     */
     static Optional<String> parseNext(String reply) {
-        var matcher = NEXT_AGENT.matcher(reply);
-        if (!matcher.find()) {
+        String lower = reply.toLowerCase(Locale.ROOT);
+        int at = lower.indexOf("next:");
+        if (at < 0) {
             return Optional.empty();
         }
-        String name = matcher.group(1).toLowerCase(Locale.ROOT);
-        return AGENT_NAMES.contains(name) ? Optional.of(name) : Optional.empty();
+        var words = WORD.matcher(lower.substring(at + "next:".length()));
+        while (words.find()) {
+            if (AGENT_NAMES.contains(words.group())) {
+                return Optional.of(words.group());
+            }
+        }
+        return Optional.empty();
     }
 
     /** The writer's latest output, which is the team's answer. */

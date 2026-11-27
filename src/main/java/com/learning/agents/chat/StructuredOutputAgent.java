@@ -2,7 +2,9 @@ package com.learning.agents.chat;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.MapperFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.json.JsonMapper;
 import com.learning.agents.llm.LlmProvider;
 import com.learning.agents.llm.ScriptedLlm;
 
@@ -26,9 +28,16 @@ public class StructuredOutputAgent {
     static final int MAX_ATTEMPTS = 3;
     static final Set<String> SENTIMENTS = Set.of("positive", "neutral", "negative");
 
-    private static final ObjectMapper JSON = new ObjectMapper()
-            .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
-            .configure(DeserializationFeature.FAIL_ON_NULL_FOR_PRIMITIVES, true);
+    /**
+     * Strict on types: by default Jackson would quietly turn {@code 4.9} or {@code "5"} into an int, so a wrong-typed
+     * reply would pass validation instead of being sent back for repair. Unknown extra fields are ignored.
+     */
+    private static final ObjectMapper JSON = JsonMapper.builder()
+            .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
+            .enable(DeserializationFeature.FAIL_ON_NULL_FOR_PRIMITIVES)
+            .disable(DeserializationFeature.ACCEPT_FLOAT_AS_INT)
+            .disable(MapperFeature.ALLOW_COERCION_OF_SCALARS)
+            .build();
 
     /** The structure we want out of a free-text product review. */
     public record ReviewSummary(String product, int rating, String sentiment) {
@@ -39,12 +48,13 @@ public class StructuredOutputAgent {
     }
 
     static Extraction extract(Function<String, String> llm, String review) {
-        String prompt = """
+        String task = """
                 Extract a summary of the product review below as JSON with exactly these fields:
                 {"product": string, "rating": integer 1-5, "sentiment": "positive" | "neutral" | "negative"}
                 Reply with the JSON object only.
                 Review: <<<%s>>>""".formatted(review);
 
+        String prompt = task;
         List<String> attempts = new ArrayList<>();
         for (int i = 0; i < MAX_ATTEMPTS; i++) {
             String reply = llm.apply(prompt);
@@ -52,12 +62,14 @@ public class StructuredOutputAgent {
             try {
                 return new Extraction(Optional.of(parse(reply)), attempts);
             } catch (IllegalArgumentException e) {
-                // The repair prompt quotes the error, so the model knows exactly what to fix.
+                // The model is stateless, so the repair prompt repeats the whole task (schema and review) and adds the
+                // exact error, so the model knows what to fix and still has the source text to fix it from.
                 prompt = """
+                        %s
+
                         Your previous reply was invalid: %s
                         Previous reply: %s
-                        Reply again with only a corrected JSON object with fields product, rating (1-5) and sentiment."""
-                        .formatted(e.getMessage(), reply);
+                        Reply again with only the corrected JSON object.""".formatted(task, e.getMessage(), reply);
             }
         }
         return new Extraction(Optional.empty(), attempts);

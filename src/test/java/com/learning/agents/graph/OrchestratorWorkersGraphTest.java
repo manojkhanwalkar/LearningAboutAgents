@@ -66,6 +66,7 @@ class OrchestratorWorkersGraphTest {
     void parsePlanStripsListMarkers() {
         assertEquals(List.of("one", "two", "three", "four"),
                 OrchestratorWorkersGraph.parsePlan("1. one\n- two\n\n* three\n2) four\nfive"));
+        assertEquals(List.of("a", "b"), OrchestratorWorkersGraph.parsePlan("Here are the subtasks:\n1. a\n2. b"));
     }
 
     @Test

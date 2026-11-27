@@ -34,6 +34,7 @@ class RouterGraphTest {
     void unexpectedClassifierReplyFallsBackToGeneral() {
         assertEquals(RouterGraph.GENERAL, RouterGraph.normalizeRoute("I'm not sure, maybe sales?"));
         assertEquals(RouterGraph.BILLING, RouterGraph.normalizeRoute("Category: BILLING."));
+        assertEquals(RouterGraph.GENERAL, RouterGraph.normalizeRoute("technical (not billing)"));
     }
 
     @Test

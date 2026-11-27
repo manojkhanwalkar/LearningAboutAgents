@@ -19,11 +19,9 @@ class HumanApprovalGraphTest {
 
     @Test
     void pausesBeforeReviewAndDoesNotActOnItsOwn() throws Exception {
-        var executeCalls = new AtomicInteger();
+        var llmCalls = new AtomicInteger();
         var graph = HumanApprovalGraph.build(prompt -> {
-            if (prompt.contains("was approved")) {
-                executeCalls.incrementAndGet();
-            }
+            llmCalls.incrementAndGet();
             return "ACTION: delete the logs";
         });
         var config = RunnableConfig.builder().threadId("t1").build();
@@ -33,7 +31,7 @@ class HumanApprovalGraphTest {
         assertEquals("ACTION: delete the logs", paused.proposal());
         assertTrue(paused.result().isEmpty());
         assertEquals(HumanApprovalGraph.REVIEW_NODE, graph.getState(config).nextNodeId());
-        assertEquals(0, executeCalls.get());
+        assertEquals(1, llmCalls.get());
     }
 
     @Test
@@ -41,7 +39,8 @@ class HumanApprovalGraphTest {
         ApprovalState result = HumanApprovalGraph.run(HumanApprovalGraph.placeholder(), "fix staging", proposal -> true);
 
         assertTrue(result.approved());
-        assertEquals("Done: web-staging-1 was restarted.", result.result().orElseThrow());
+        // The result comes from the action code, not from the model claiming success.
+        assertEquals("Executed (simulated): Restart the staging web server (web-staging-1).", result.result().orElseThrow());
     }
 
     @Test
@@ -71,7 +70,7 @@ class HumanApprovalGraphTest {
 
     @Test
     void mainExecutesOnYesAndCancelsOnEndOfInput() throws Exception {
-        assertTrue(MainRunner.runWithInput(HumanApprovalGraph::main, "y\n").contains("Done: web-staging-1"));
+        assertTrue(MainRunner.runWithInput(HumanApprovalGraph::main, "y\n").contains("Executed (simulated)"));
         assertTrue(MainRunner.runWithInput(HumanApprovalGraph::main, "").contains("Cancelled by reviewer"));
     }
 

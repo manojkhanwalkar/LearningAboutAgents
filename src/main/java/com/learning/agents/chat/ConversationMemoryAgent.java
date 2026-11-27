@@ -21,6 +21,8 @@ import java.util.stream.Collectors;
 public class ConversationMemoryAgent {
 
     static final int RECENT_TURNS = 4;
+    /** The prompt asks for a short summary, but only code can guarantee it; longer summaries are cut to this. */
+    static final int MAX_SUMMARY_CHARS = 600;
 
     /** One message in the conversation. */
     record Turn(String role, String text) {
@@ -67,6 +69,9 @@ public class ConversationMemoryAgent {
                     Current summary: %s
                     New messages:
                     %s""".formatted(summary.isBlank() ? "(none)" : summary, render(evicted))).strip();
+            if (summary.length() > MAX_SUMMARY_CHARS) {
+                summary = summary.substring(0, MAX_SUMMARY_CHARS);
+            }
         }
     }
 

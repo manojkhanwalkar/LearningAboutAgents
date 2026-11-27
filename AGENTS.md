@@ -44,7 +44,8 @@ Read from environment variables in `com.learning.agents.OllamaConfig`:
 | `OLLAMA_MODEL` | `llama3.1` |
 | `LLM_BACKEND` | `placeholder`, read by `com.learning.agents.llm.LlmProvider`; `ollama` switches the agent-pattern samples to a real model |
 
-Examples that use tools or graphs need a model that supports **tool calling** (e.g. `llama3.1`, `qwen3`, `mistral`).
+`tools.ToolCallingAgent` needs a model that supports native **tool calling** (e.g. `llama3.1`, `qwen3`, `mistral`).
+The other samples, including all graphs, use plain-text prompts and work with any instruction-following model (e.g. `gemma3`).
 Check that the server is up with `curl localhost:11434/api/tags`.
 
 ## Layout
@@ -66,6 +67,7 @@ src/test/java/...            # tests mirror main packages
 - Create models through `OllamaConfig`. Do not hard-code URLs or model names in examples.
 - New samples take their LLM as a `Function<String, String>`, provide a `static ScriptedLlm placeholder()` with canned
   replies, and get it in `main` through `LlmProvider.resolve(placeholder())`, so they run without Ollama by default.
+  A placeholder that must vary between calls (e.g. `SelfConsistencyAgent`'s noisy voter) may return a plain thread-safe `Function`.
 - Accumulating graph-state keys whose entries can legitimately repeat (worker results, agent scratchpads) use
   `Channels.appenderWithDuplicate`; plain `Channels.appender` silently drops a value already in the list.
 - Each example is a self-contained class with a `main` method that accepts an optional prompt via `args`.

@@ -67,16 +67,14 @@ public class RouterGraph {
                 .compile();
     }
 
-    /** Maps a free-text classifier reply to a known route; anything unrecognised becomes {@code general}. */
+    /**
+     * Maps a free-text classifier reply to a known route. A reply that names exactly one route wins; a reply that
+     * names none, or several (such as "technical, not billing"), is ambiguous and becomes {@code general}.
+     */
     static String normalizeRoute(String reply) {
         String text = reply.toLowerCase(Locale.ROOT);
-        if (text.contains(BILLING)) {
-            return BILLING;
-        }
-        if (text.contains(TECHNICAL)) {
-            return TECHNICAL;
-        }
-        return GENERAL;
+        var named = SPECIALISTS.keySet().stream().filter(text::contains).toList();
+        return named.size() == 1 ? named.getFirst() : GENERAL;
     }
 
     /** Canned replies so the sample runs without a model. */

@@ -48,6 +48,9 @@ class SupervisorGraphTest {
     void parseNextIsCaseInsensitive() {
         assertEquals(Optional.of("critic"), SupervisorGraph.parseNext("I think next: Critic"));
         assertEquals(Optional.empty(), SupervisorGraph.parseNext("FINISH"));
+        assertEquals(Optional.of("writer"), SupervisorGraph.parseNext("NEXT: the writer"));
+        assertEquals(Optional.of("writer"), SupervisorGraph.parseNext("**NEXT:** writer"));
+        assertEquals(Optional.empty(), SupervisorGraph.parseNext("NEXT: nobody"));
     }
 
     @Test

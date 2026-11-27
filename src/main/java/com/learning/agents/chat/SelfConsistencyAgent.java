@@ -2,12 +2,18 @@ package com.learning.agents.chat;
 
 import com.learning.agents.llm.LlmProvider;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -28,7 +34,11 @@ public class SelfConsistencyAgent {
 
     static final int SAMPLES = 5;
 
-    private static final Pattern ANSWER = Pattern.compile("ANSWER:\\s*(.+)", Pattern.CASE_INSENSITIVE);
+    /** How long to wait for one sample; a slower or failed sample abstains instead of sinking the whole vote. */
+    static final Duration SAMPLE_TIMEOUT = Duration.ofMinutes(3);
+
+    private static final Logger log = LoggerFactory.getLogger(SelfConsistencyAgent.class);
+    private static final Pattern ANSWER = Pattern.compile("ANSWER:[*_]*[ \\t]*(.+)", Pattern.CASE_INSENSITIVE);
 
     /** The winning answer, how many samples gave it, and how many samples produced a usable answer. */
     record Vote(String answer, long votes, int valid) {
@@ -43,8 +53,13 @@ public class SelfConsistencyAgent {
      * @param llm maps a prompt to a model reply; called from several threads at once, so it must be thread-safe
      * @return the vote, or empty if no sample produced an {@code ANSWER:} line
      */
-    static Optional<Vote> solve(Function<String, String> llm, String question, int samples)
-            throws InterruptedException, ExecutionException {
+    static Optional<Vote> solve(Function<String, String> llm, String question, int samples) throws InterruptedException {
+        return solve(llm, question, samples, SAMPLE_TIMEOUT);
+    }
+
+    /** Same as {@link #solve(Function, String, int)} with the per-sample timeout passed in, so it can be tested. */
+    static Optional<Vote> solve(Function<String, String> llm, String question, int samples, Duration timeout)
+            throws InterruptedException {
         String prompt = """
                 Think step by step, then give the final answer on its own last line as "ANSWER: <answer>".
                 Question: %s""".formatted(question);
@@ -56,8 +71,15 @@ public class SelfConsistencyAgent {
             for (int i = 0; i < samples; i++) {
                 futures.add(executor.submit(() -> llm.apply(prompt)));
             }
+            long deadline = System.nanoTime() + timeout.toNanos();
             for (var future : futures) {
-                replies.add(future.get());
+                try {
+                    replies.add(future.get(Math.max(0, deadline - System.nanoTime()), TimeUnit.NANOSECONDS));
+                } catch (ExecutionException | TimeoutException e) {
+                    // One bad sample shouldn't lose the others: it simply doesn't vote.
+                    future.cancel(true);
+                    log.warn("A sample failed and abstains: {}", e.toString());
+                }
             }
         }
         return vote(replies.stream().map(SelfConsistencyAgent::extractAnswer).flatMap(Optional::stream).toList());
@@ -71,7 +93,7 @@ public class SelfConsistencyAgent {
             last = matcher.group(1);
         }
         return Optional.ofNullable(last)
-                .map(answer -> answer.strip().replaceAll("[.!]+$", "").toLowerCase(Locale.ROOT))
+                .map(answer -> answer.replaceAll("[*_`]", "").strip().replaceAll("[.!]+$", "").toLowerCase(Locale.ROOT))
                 .filter(answer -> !answer.isEmpty());
     }
 

@@ -52,6 +52,15 @@ class ConversationMemoryAgentTest {
     }
 
     @Test
+    void summaryLengthIsCappedInCode() {
+        var agent = new ConversationMemoryAgent(prompt -> prompt.startsWith("Update the running summary") ? "x".repeat(5_000) : "ok");
+        for (int i = 0; i < 4; i++) {
+            agent.chat("m" + i);
+        }
+        assertEquals(ConversationMemoryAgent.MAX_SUMMARY_CHARS, agent.summary().length());
+    }
+
+    @Test
     void placeholderOnlyRemembersTheNameThroughTheSummary() {
         var agent = new ConversationMemoryAgent(ConversationMemoryAgent.placeholder());
         assertEquals("Sorry, I don't remember.", agent.chat("What's my name?"));

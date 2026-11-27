@@ -8,6 +8,7 @@ import org.bsc.langgraph4j.StateGraph;
 
 import java.util.Map;
 import java.util.function.Function;
+import java.util.regex.Pattern;
 
 import static org.bsc.langgraph4j.StateGraph.END;
 import static org.bsc.langgraph4j.StateGraph.START;
@@ -31,6 +32,8 @@ public class PromptChainingGraph {
     static final int MAX_OUTLINE_ATTEMPTS = 2;
     static final int MIN_OUTLINE_POINTS = 3;
 
+    private static final Pattern LIST_ITEM = Pattern.compile("([-*•]|\\d+[.)])\\s+\\S");
+
     /**
      * Builds the chain around a pluggable LLM so it can be tested without Ollama.
      *
@@ -39,10 +42,15 @@ public class PromptChainingGraph {
     public static CompiledGraph<PromptChainState> build(Function<String, String> llm) throws GraphStateException {
         return new StateGraph<>(PromptChainState.SCHEMA, PromptChainState::new)
                 .addNode("outline", node_async(state -> {
+                    // On a retry, say what was wrong; resending the identical prompt tends to get the identical reply.
+                    String feedback = state.outlineAttempts() == 0 ? "" : """
+
+                            Your previous outline had only %d point(s). Give at least %d."""
+                            .formatted(countPoints(state.outline()), MIN_OUTLINE_POINTS);
                     String outline = llm.apply("""
                             Create an outline for a short blog post about "%s".
-                            Reply with %d to 5 bullet points, one per line, each starting with "- "."""
-                            .formatted(state.topic(), MIN_OUTLINE_POINTS));
+                            Reply with %d to 5 bullet points, one per line, each starting with "- ".%s"""
+                            .formatted(state.topic(), MIN_OUTLINE_POINTS, feedback));
                     int attempts = state.outlineAttempts() + 1;
                     return Map.of(
                             PromptChainState.OUTLINE, outline,
@@ -80,8 +88,9 @@ public class PromptChainingGraph {
         return state.outlineAttempts() < MAX_OUTLINE_ATTEMPTS ? "retry" : "give_up";
     }
 
+    /** Counts list items; accepts the bullet styles models actually use ({@code -}, {@code *}, {@code •}, {@code 1.}). */
     static int countPoints(String outline) {
-        return (int) outline.lines().map(String::strip).filter(line -> line.startsWith("- ")).count();
+        return (int) outline.lines().map(String::strip).filter(line -> LIST_ITEM.matcher(line).lookingAt()).count();
     }
 
     /** Canned replies so the sample runs without a model. */

@@ -7,6 +7,7 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class PromptChainingGraphTest {
@@ -54,8 +55,22 @@ class PromptChainingGraphTest {
     }
 
     @Test
-    void countsOnlyDashBullets() {
-        assertEquals(2, PromptChainingGraph.countPoints("- one\n  - two\n* three\n4. four"));
+    void countsTheBulletStylesModelsUse() {
+        assertEquals(4, PromptChainingGraph.countPoints("- one\n  * two\n• three\n4. four\nplain line\n-nospace"));
+    }
+
+    @Test
+    void retryPromptExplainsWhatWasWrong() throws Exception {
+        var prompts = new java.util.ArrayList<String>();
+        PromptChainingGraph.build(prompt -> {
+                    prompts.add(prompt);
+                    return "- only one";
+                })
+                .invoke(Map.of(PromptChainState.TOPIC, "x"))
+                .orElseThrow();
+
+        assertFalse(prompts.getFirst().contains("previous outline"));
+        assertTrue(prompts.get(1).contains("Your previous outline had only 1 point(s)"));
     }
 
     @Test

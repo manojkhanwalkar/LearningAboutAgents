@@ -57,9 +57,8 @@ public class HumanApprovalGraph {
                         Request: %s""".formatted(state.request())).strip())))
                 // Does nothing itself; it exists so the graph has a place to pause before the decision is read.
                 .addNode(REVIEW_NODE, node_async(state -> Map.of()))
-                .addNode("execute", node_async(state -> Map.of(ApprovalState.RESULT, llm.apply("""
-                        The following action was approved by a human. Report, in one sentence, that it was done.
-                        %s""".formatted(state.proposal())))))
+                // Runs the action in code, not by asking the LLM to say it was done; the result is what really happened.
+                .addNode("execute", node_async(state -> Map.of(ApprovalState.RESULT, performAction(state.proposal()))))
                 .addNode("cancel", node_async(state -> Map.of(ApprovalState.RESULT, "Cancelled by reviewer: " + state.proposal())))
                 .addEdge(START, "propose")
                 .addEdge("propose", REVIEW_NODE)
@@ -107,11 +106,18 @@ public class HumanApprovalGraph {
         };
     }
 
+    /**
+     * Stand-in for the real side effect (an API call, a shell command, a payment). Replace it with a tool that does
+     * the work and returns its actual outcome; only this code, never the model, should report that the action ran.
+     */
+    static String performAction(String proposal) {
+        return "Executed (simulated): " + proposal.replaceFirst("^ACTION:\\s*", "");
+    }
+
     /** Canned replies so the sample runs without a model. */
     static ScriptedLlm placeholder() {
         return ScriptedLlm.create()
-                .when("operations agent", "ACTION: Restart the staging web server (web-staging-1).")
-                .when("was approved by a human", "Done: web-staging-1 was restarted.");
+                .when("operations agent", "ACTION: Restart the staging web server (web-staging-1).");
     }
 
     public static void main(String[] args) throws Exception {
