@@ -516,7 +516,8 @@ nothing and gets "I don't know".
 **Try this.**
 - Compare with chapter 12: ask a question in words the handbook doesn't use. With the placeholder embeddings
   nothing matches; with a real embedding model it often does.
-- Lower `MIN_RERANK_SCORE` to 3 and watch off-topic chunks reach the answer.
+- Lower `MIN_RERANK_SCORE` to 2 (the placeholder rates irrelevant chunks 2) and watch off-topic chunks reach the
+  answer, or try it with a real model.
 
 **In production.**
 - Tune the thresholds per embedding model; they don't transfer.
@@ -587,7 +588,8 @@ With the placeholder embeddings, recall needs a shared word ("diet"); a real emb
 "vegetarian".
 
 **Try this.**
-- Run it twice with `AGENT_MEMORY_FILE=/tmp/me.json` and add facts in between.
+- Set `AGENT_MEMORY_FILE=/tmp/me.json`, run it, edit the messages in `main`, and run it again: the second run
+  starts with the first run's facts.
 - Write a fact that contradicts an old one ("I eat fish now"). Both are kept. Real systems need an *update* step that
   replaces outdated facts.
 
