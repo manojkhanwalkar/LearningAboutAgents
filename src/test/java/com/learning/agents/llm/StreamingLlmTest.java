@@ -80,7 +80,7 @@ class StreamingLlmTest {
             handler.onPartialResponse(new dev.langchain4j.model.chat.response.PartialResponse("early "), context);
             try {
                 keepGoing.await();   // stall past the timeout, then keep "generating"
-            } catch (InterruptedException e) {
+            } catch (InterruptedException _) {
                 Thread.currentThread().interrupt();
             }
             handler.onPartialResponse(new dev.langchain4j.model.chat.response.PartialResponse("late"), context);
@@ -93,6 +93,44 @@ class StreamingLlmTest {
         assertTrue(e.getMessage().contains("no complete reply within"));
         assertTrue(cancelled.get(), "the request must be cancelled");
         assertEquals(List.of("early "), tokens);
+    }
+
+    @Test
+    void aStreamAbandonedBeforeItsFirstTokenIsCancelledWhenTheHandleArrives() throws Exception {
+        // The handle only comes with the first token. If the timeout fires before that (say, the model is still
+        // loading), the stream must still be cancelled once the first token shows up, not run to the end unseen.
+        var cancelled = new java.util.concurrent.atomic.AtomicBoolean();
+        var timedOut = new java.util.concurrent.CountDownLatch(1);
+        var firstTokenHandled = new java.util.concurrent.CountDownLatch(1);
+        List<String> tokens = java.util.Collections.synchronizedList(new ArrayList<>());
+        var llm = new OllamaStreamingLlm(fake(handler -> {
+            var context = new dev.langchain4j.model.chat.response.PartialResponseContext(
+                    new dev.langchain4j.model.chat.response.StreamingHandle() {
+                        @Override
+                        public void cancel() {
+                            cancelled.set(true);
+                        }
+
+                        @Override
+                        public boolean isCancelled() {
+                            return cancelled.get();
+                        }
+                    });
+            try {
+                timedOut.await();   // the first token arrives only after the caller has given up
+            } catch (InterruptedException _) {
+                Thread.currentThread().interrupt();
+            }
+            handler.onPartialResponse(new dev.langchain4j.model.chat.response.PartialResponse("late"), context);
+            firstTokenHandled.countDown();
+        }), Duration.ofMillis(50));
+
+        assertThrows(IllegalStateException.class, () -> llm.stream("hi", tokens::add));
+        timedOut.countDown();
+        assertTrue(firstTokenHandled.await(5, java.util.concurrent.TimeUnit.SECONDS));
+
+        assertTrue(cancelled.get(), "the request must be cancelled once its handle arrives");
+        assertEquals(List.of(), tokens);
     }
 
     @Test

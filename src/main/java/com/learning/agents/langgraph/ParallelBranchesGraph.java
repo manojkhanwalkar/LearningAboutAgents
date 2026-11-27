@@ -105,6 +105,7 @@ public class ParallelBranchesGraph {
                 .when("Weigh these views", "Run locally if volume is high and data is sensitive; otherwise start hosted.");
     }
 
+    /** Times the same graph run one branch after another and with a virtual-thread executor, and prints both timings. */
     public static void main(String[] args) throws Exception {
         String question = args.length > 0 ? String.join(" ", args) : "Should our team run its LLM locally?";
         // The placeholder answers instantly, so give it a model-like delay to make the difference visible.

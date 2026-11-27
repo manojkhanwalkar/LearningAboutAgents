@@ -100,8 +100,8 @@ public class HumanApprovalGraph {
             try {
                 String answer = in.readLine();
                 return answer != null && Set.of("y", "yes").contains(answer.strip().toLowerCase(Locale.ROOT));
-            } catch (IOException e) {
-                return false;
+            } catch (IOException _) {
+                return false;   // no answer is not a yes: an unreadable console rejects the action
             }
         };
     }

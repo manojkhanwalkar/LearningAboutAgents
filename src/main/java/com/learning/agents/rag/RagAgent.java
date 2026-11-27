@@ -1,6 +1,7 @@
 package com.learning.agents.rag;
 
 import com.learning.agents.llm.LlmProvider;
+import com.learning.agents.llm.PromptText;
 import com.learning.agents.llm.ScriptedLlm;
 import com.learning.agents.rag.KeywordRetriever.Doc;
 import com.learning.agents.rag.KeywordRetriever.Hit;
@@ -53,16 +54,24 @@ public class RagAgent {
         return new Answer(llm.apply(prompt(question, hits)).strip(), hits);
     }
 
-    /** Builds the grounded prompt: the retrieved documents in {@code <doc id>} tags, citation and refusal rules, then the question. */
+    /**
+     * Builds the grounded prompt: the retrieved documents in {@code <doc id>} tags (text escaped, so a document can't
+     * close its tag and pose as instructions; ids too, quotes included, so an id can't end its attribute), citation and refusal rules, then the question.
+     */
     static String prompt(String question, List<Hit> hits) {
         String context = hits.stream()
-                .map(hit -> "<doc id=\"%s\">%s</doc>".formatted(hit.doc().id(), hit.doc().text()))
+                .map(hit -> "<doc id=\"%s\">%s</doc>".formatted(escapeId(hit.doc().id()), PromptText.escape(hit.doc().text())))
                 .collect(Collectors.joining("\n"));
         return """
                 Answer the question using ONLY the documents below. Cite the id of each document you use, like [doc-id].
                 If the documents do not contain the answer, reply exactly: %s
                 %s
                 Question: %s""".formatted(NO_ANSWER, context, question);
+    }
+
+    /** Escapes a document id for the {@code id="..."} attribute: markup characters and double quotes. */
+    static String escapeId(String id) {
+        return PromptText.escape(id).replace("\"", "&quot;");
     }
 
     /** Canned replies so the sample runs without a model. */
@@ -73,6 +82,7 @@ public class RagAgent {
                 .otherwise(NO_ANSWER);
     }
 
+    /** Answers sample questions (or {@code args}) over the handbook and prints the retrieved documents and answer. */
     public static void main(String[] args) {
         var agent = new RagAgent(new KeywordRetriever(HANDBOOK), LlmProvider.resolve(placeholder()));
         var questions = args.length > 0

@@ -123,6 +123,7 @@ public class StructuredOutputAgent {
                         ```""");
     }
 
+    /** Extracts a summary from a sample review (or the text in {@code args}) and prints each attempt and the parsed result. */
     public static void main(String[] args) {
         String review = args.length > 0
                 ? String.join(" ", args)

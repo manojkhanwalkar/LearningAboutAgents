@@ -11,11 +11,13 @@ import dev.langchain4j.service.SystemMessage;
  */
 public class ToolCallingAgent {
 
+    /** The AI Service contract: one chat method, with tool use encouraged by the system message. */
     interface MathAssistant {
         @SystemMessage("You are a precise math assistant. Always use the provided tools for arithmetic.")
         String chat(String userMessage);
     }
 
+    /** Asks the assistant a math question from {@code args} (or a default) against Ollama and prints the answer. */
     public static void main(String[] args) {
         MathAssistant assistant = AiServices.builder(MathAssistant.class)
                 .chatModel(OllamaConfig.chatModel())

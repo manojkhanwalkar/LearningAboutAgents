@@ -1,6 +1,8 @@
 package com.learning.agents.graph;
 
 import com.learning.agents.MainRunner;
+import org.bsc.langgraph4j.GraphInput;
+import org.bsc.langgraph4j.RunnableConfig;
 import org.junit.jupiter.api.Test;
 
 import java.util.Map;
@@ -11,7 +13,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class RouterGraphTest {
 
     private static RouterState route(String query) throws Exception {
-        return RouterGraph.build(RouterGraph.placeholder()).invoke(Map.of(RouterState.QUERY, query)).orElseThrow();
+        return RouterGraph.build(RouterGraph.placeholder()).invoke(GraphInput.args(Map.of(RouterState.QUERY, query)), RunnableConfig.builder().build()).orElseThrow();
     }
 
     @Test
@@ -25,7 +27,7 @@ class RouterGraphTest {
     @Test
     void specialistSeesItsOwnInstructions() throws Exception {
         RouterState result = RouterGraph.build(prompt -> prompt.startsWith("Classify") ? "technical" : prompt)
-                .invoke(Map.of(RouterState.QUERY, "help"))
+                .invoke(GraphInput.args(Map.of(RouterState.QUERY, "help")), RunnableConfig.builder().build())
                 .orElseThrow();
         assertTrue(result.answer().orElseThrow().startsWith(RouterGraph.SPECIALISTS.get(RouterGraph.TECHNICAL)));
     }

@@ -16,6 +16,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Map;
 import java.util.function.Function;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
@@ -90,7 +91,7 @@ public class McpAgent {
         // One more turn than calls, so the model can answer after its last allowed call.
         for (int turn = 0; turn <= MAX_CALLS; turn++) {
             String reply = llm.apply(prompt(question, tools, pinned, transcript));
-            var call = Replies.lineAfter(reply, "CALL ").map(CALL_ARGS::matcher).filter(java.util.regex.Matcher::find);
+            var call = Replies.lineAfter(reply, "CALL ").map(CALL_ARGS::matcher).filter(Matcher::find);
             Optional<String> answer = Replies.after(reply, "ANSWER:");
             if (call.isPresent()) {
                 if (calls == MAX_CALLS) {
@@ -188,6 +189,7 @@ public class McpAgent {
                 .otherwise("CALL capital_of {\"country\": \"Japan\"}");
     }
 
+    /** Starts the in-process demo server, connects to it and asks a question (or {@code args}), printing the tool calls and answer. */
     public static void main(String[] args) throws Exception {
         String question = args.length > 0
                 ? String.join(" ", args)

@@ -3,7 +3,9 @@ package com.learning.agents.graph;
 import com.learning.agents.OllamaConfig;
 import dev.langchain4j.model.chat.ChatModel;
 import org.bsc.langgraph4j.CompiledGraph;
+import org.bsc.langgraph4j.GraphInput;
 import org.bsc.langgraph4j.GraphStateException;
+import org.bsc.langgraph4j.RunnableConfig;
 import org.bsc.langgraph4j.StateGraph;
 
 import java.util.Map;
@@ -70,12 +72,13 @@ public class WriterReviewerGraph {
                 || state.revisions() >= MAX_REVISIONS;
     }
 
+    /** Runs the writer-reviewer loop on a topic from {@code args} (or a default) against Ollama and prints the log and final draft. */
     public static void main(String[] args) throws Exception {
         ChatModel model = OllamaConfig.chatModel();
         String topic = args.length > 0 ? String.join(" ", args) : "why agents need memory";
 
         WriterState result = build(model::chat)
-                .invoke(Map.of(WriterState.TOPIC, topic))
+                .invoke(GraphInput.args(Map.of(WriterState.TOPIC, topic)), RunnableConfig.builder().build())
                 .orElseThrow();
 
         result.log().forEach(entry -> System.out.println("- " + entry));

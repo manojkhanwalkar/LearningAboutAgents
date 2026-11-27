@@ -9,6 +9,7 @@ import dev.langchain4j.exception.RetriableException;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.FutureTask;
@@ -18,6 +19,7 @@ import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 import java.util.random.RandomGenerator;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
@@ -105,7 +107,7 @@ public class ModelCascade {
             Optional<Integer> confidence = confidence(smallReply.get());
             Optional<String> answer = answer(smallReply.get());
             if (answer.isPresent() && confidence.orElse(0) >= MIN_CONFIDENCE) {
-                trace.add("small: confident (%d), done".formatted(confidence.get()));
+                trace.add(String.format(Locale.ROOT, "small: confident (%d), done", confidence.get()));
                 return new Result(answer, "small", trace);
             }
             trace.add("small: not confident enough (%s), escalating".formatted(confidence.map(String::valueOf).orElse("unreadable")));
@@ -141,7 +143,7 @@ public class ModelCascade {
                     return Optional.empty();
                 }
                 Duration wait = backoff(attempt);
-                trace.add("%s: attempt %d failed (%s), retrying in %d ms".formatted(name, attempt, describe(e), wait.toMillis()));
+                trace.add(String.format(Locale.ROOT, "%s: attempt %d failed (%s), retrying in %d ms", name, attempt, describe(e), wait.toMillis()));
                 sleeper.sleep(wait);
             }
         }
@@ -190,7 +192,7 @@ public class ModelCascade {
     static Optional<Integer> confidence(String reply) {
         return Replies.lineAfter(reply, "CONFIDENCE:")
                 .map(LEADING_NUMBER::matcher)
-                .filter(java.util.regex.Matcher::find)
+                .filter(Matcher::find)
                 .map(m -> Math.min(100, Integer.parseInt(m.group(1))));
     }
 
@@ -228,10 +230,11 @@ public class ModelCascade {
         return ScriptedLlm.create().otherwise("Lobachevsky founded hyperbolic (non-Euclidean) geometry.");
     }
 
+    /** Asks sample questions (or {@code args}) through the cascade and prints each step of the trace and which model answered. */
     public static void main(String[] args) throws Exception {
-        String smallName = System.getenv().getOrDefault("CASCADE_SMALL_MODEL", OllamaConfig.modelName());
-        String largeName = System.getenv().getOrDefault("CASCADE_LARGE_MODEL", OllamaConfig.modelName());
-        String fallbackName = System.getenv().getOrDefault("CASCADE_FALLBACK_MODEL", OllamaConfig.modelName());
+        String smallName = OllamaConfig.modelName("CASCADE_SMALL_MODEL");
+        String largeName = OllamaConfig.modelName("CASCADE_LARGE_MODEL");
+        String fallbackName = OllamaConfig.modelName("CASCADE_FALLBACK_MODEL");
         var cascade = new ModelCascade(
                 LlmProvider.resolve(smallPlaceholder(), () -> OllamaConfig.chatModel(smallName, 0)::chat),
                 LlmProvider.resolve(largePlaceholder(), () -> OllamaConfig.chatModel(largeName, 0)::chat),

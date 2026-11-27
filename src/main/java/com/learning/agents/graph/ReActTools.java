@@ -54,13 +54,14 @@ public final class ReActTools {
                 .orElse("No fact found for \"%s\". Known topics: %s".formatted(query, String.join(", ", FACTS.keySet())));
     }
 
+    /** Evaluates one binary expression such as {@code 12 * 3} exactly in decimal; returns an {@code Error: ...} message, never throws, for malformed input, oversized numbers or division by zero. */
     static String calculate(String expression) {
         var m = BINARY_EXPR.matcher(expression);
         if (!m.matches()) {
             return "Error: expected '<number> <op> <number>', got \"%s\"".formatted(expression);
         }
         if (digits(m.group(1)) > MAX_DIGITS || digits(m.group(3)) > MAX_DIGITS) {
-            return "Error: number is out of range (at most %d digits)".formatted(MAX_DIGITS);
+            return String.format(Locale.ROOT, "Error: number is out of range (at most %d digits)", MAX_DIGITS);
         }
         // Decimal arithmetic, so results are exact (or correctly rounded for division) at any magnitude
         // the digit limit allows, with no silent overflow, underflow or binary rounding.

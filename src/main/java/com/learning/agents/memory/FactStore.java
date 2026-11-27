@@ -14,9 +14,11 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
+import java.util.Set;
 
 /**
  * Long-term memory as a small JSON file of facts that outlives the process, plus embedding search over it.
@@ -31,12 +33,16 @@ public final class FactStore {
 
     static final int MAX_FACTS = 200;
     static final int MAX_FACT_CHARS = 200;
+    /** Far more than {@link #MAX_FACTS} facts of {@link #MAX_FACT_CHARS} need; a larger file wasn't written by this store. */
+    static final long MAX_FILE_BYTES = 1024 * 1024;
 
     private static final ObjectMapper JSON = new ObjectMapper();
 
+    /** A stored fact with its embedding. */
     private record Entry(String text, Embedding embedding) {
     }
 
+    /** A fact with its similarity to a query. */
     private record Scored(String text, double score) {
     }
 
@@ -47,7 +53,8 @@ public final class FactStore {
     /**
      * Opens the store, loading any facts already saved in {@code file}.
      *
-     * @throws UncheckedIOException if the file exists but cannot be read, is not a JSON list of strings, or holds nulls
+     * @throws UncheckedIOException if the file exists but cannot be read, is larger than {@link #MAX_FILE_BYTES}, is not
+     *                              a JSON list of strings, or holds nulls
      */
     public FactStore(Path file, EmbeddingModel embeddings) {
         this.file = file;
@@ -57,7 +64,14 @@ public final class FactStore {
         }
         List<String> saved;
         try {
-            saved = JSON.readValue(file.toFile(), new TypeReference<>() {
+            byte[] bytes;
+            try (var in = Files.newInputStream(file)) {
+                bytes = in.readNBytes((int) MAX_FILE_BYTES + 1);   // one read, so a swapped file can't dodge the cap
+            }
+            if (bytes.length > MAX_FILE_BYTES) {
+                throw new IOException("memory file is larger than " + MAX_FILE_BYTES + " bytes");
+            }
+            saved = JSON.readValue(bytes, new TypeReference<>() {
             });
             if (saved == null || saved.stream().anyMatch(Objects::isNull)) {
                 throw new IOException("memory file must be a JSON list of strings");
@@ -66,9 +80,10 @@ public final class FactStore {
             throw new UncheckedIOException("Cannot read memory file " + file, e);
         }
         List<String> kept = new ArrayList<>();
+        Set<String> seen = new HashSet<>();   // lower-cased, so de-duplicating stays linear in the file size
         for (String fact : saved) {
             String text = normalize(fact);
-            if (isAcceptable(text) && kept.stream().noneMatch(k -> sameFact(k, text))) {
+            if (isAcceptable(text) && seen.add(text.toLowerCase(Locale.ROOT))) {
                 kept.add(text);
             }
         }
@@ -160,6 +175,7 @@ public final class FactStore {
         return embeddings.embed(TextSegment.from(text)).content();
     }
 
+    /** Writes all facts to the file through a temp file and an atomic move, so a crash never leaves a half-written file; throws {@link UncheckedIOException} on failure. */
     private void save() {
         Path tmp = null;
         try {
@@ -180,7 +196,7 @@ public final class FactStore {
         }
         try {
             Files.deleteIfExists(tmp);
-        } catch (IOException ignored) {
+        } catch (IOException _) {
             // Best effort: the write already failed, and that is the error the caller needs to see.
         }
     }

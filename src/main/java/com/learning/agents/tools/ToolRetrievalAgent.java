@@ -61,6 +61,7 @@ public class ToolRetrievalAgent {
                 return m.find() ? String.format(Locale.ROOT, "%.2f", Double.parseDouble(m.group(1)) / 100 * Double.parseDouble(m.group(2))) : "error: use 'N% of M'";
             }));
 
+    /** A catalog tool with the embedding of its description. */
     private record Indexed(Tool tool, Embedding embedding) {
     }
 
@@ -130,6 +131,7 @@ public class ToolRetrievalAgent {
                 .otherwise("NONE");
     }
 
+    /** Answers sample questions (or {@code args}) and prints the tools shown to the model and the one it called. */
     public static void main(String[] args) {
         var agent = new ToolRetrievalAgent(CATALOG, LlmProvider.resolveEmbeddings(new HashingEmbeddingModel()),
                 LlmProvider.resolve(placeholder()));

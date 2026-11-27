@@ -8,12 +8,14 @@ import org.junit.jupiter.api.io.TempDir;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class LongTermMemoryAgentTest {
@@ -103,6 +105,18 @@ class LongTermMemoryAgentTest {
     }
 
     @Test
+    void parseFactsNeverTakesAFactFromTheNextLine() {
+        // An empty FACT: line is not a fact; the old (?m)^\s*FACT:\s* pattern skipped the newline and stored the next line.
+        assertEquals(List.of("b"), LongTermMemoryAgent.parseFacts("FACT:\nnot a fact\nFACT: b"));
+    }
+
+    @Test
+    void parseFactsIsLinearOnLongBlankReplies() {
+        String stuck = "\n".repeat(200_000) + "x";
+        assertTimeoutPreemptively(Duration.ofSeconds(1), () -> assertTrue(LongTermMemoryAgent.parseFacts(stuck).isEmpty()));
+    }
+
+    @Test
     void storeDeduplicatesForgetsAndCapsItsSize() throws Exception {
         Path file = dir.resolve("m.json");
         var store = new FactStore(file, embeddings);
@@ -160,6 +174,30 @@ class LongTermMemoryAgentTest {
         assertEquals(FactStore.MAX_FACTS, store.all().size());
         assertEquals("fact 100", store.all().getFirst());
         assertEquals("fact " + (FactStore.MAX_FACTS + 99), store.all().getLast());
+    }
+
+    @Test
+    void oversizedMemoryFileIsRefusedBeforeParsing() throws Exception {
+        // The store never writes more than MAX_FACTS short facts, so a far larger file was not written by it.
+        Path file = dir.resolve("huge.json");
+        Files.writeString(file, "[\"" + "x".repeat((int) FactStore.MAX_FILE_BYTES) + "\"]");
+        var e = assertThrows(UncheckedIOException.class, () -> new FactStore(file, embeddings));
+        assertTrue(e.getMessage().contains("Cannot read memory file"));
+    }
+
+    @Test
+    void loadingManyFactsIsLinear() throws Exception {
+        // De-duplicating by scanning the kept list was quadratic: 60k short facts took minutes.
+        Path file = dir.resolve("many.json");
+        var saved = new ArrayList<String>();
+        for (int i = 0; i < 60_000; i++) {
+            saved.add("f" + i);
+        }
+        Files.writeString(file, new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(saved));
+
+        var store = assertTimeoutPreemptively(Duration.ofSeconds(5), () -> new FactStore(file, embeddings));
+        assertEquals(FactStore.MAX_FACTS, store.all().size());
+        assertEquals("f59999", store.all().getLast());
     }
 
     @Test

@@ -61,6 +61,7 @@ public class SelfConsistencyAgent {
      * Same as {@link #solve(Function, String, int)} with the deadline passed in, so it can be tested.
      *
      * @param timeout how long to wait for all samples together; unfinished samples are cancelled and abstain
+     * @throws InterruptedException if interrupted while waiting; the unfinished samples are cancelled first
      */
     static Optional<Vote> solve(Function<String, String> llm, String question, int samples, Duration timeout)
             throws InterruptedException {
@@ -83,6 +84,11 @@ public class SelfConsistencyAgent {
                     // One bad sample shouldn't lose the others: it simply doesn't vote.
                     future.cancel(true);
                     log.warn("A sample failed and abstains: {}", e.toString());
+                } catch (InterruptedException e) {
+                    // get() cleared the flag, so close() would wait for every sample to finish. Cancel them first.
+                    executor.shutdownNow();
+                    Thread.currentThread().interrupt();
+                    throw e;
                 }
             }
         }

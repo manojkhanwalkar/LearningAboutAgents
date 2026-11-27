@@ -29,6 +29,7 @@ public final class Replies {
         return find(reply, label, false);
     }
 
+    /** Shared scan for {@link #after} and {@link #lineAfter}: the text after the first line starting with {@code label}, to the end of the reply or of that line, or empty when there is no such line or nothing follows the label. */
     private static Optional<String> find(String reply, String label, boolean toEnd) {
         int start = 0;
         while (start <= reply.length()) {

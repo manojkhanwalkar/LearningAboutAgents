@@ -6,10 +6,13 @@ import com.learning.agents.llm.Replies;
 import com.learning.agents.llm.ScriptedLlm;
 import com.learning.agents.llm.TextLists;
 import org.bsc.langgraph4j.CompiledGraph;
+import org.bsc.langgraph4j.GraphInput;
 import org.bsc.langgraph4j.GraphStateException;
+import org.bsc.langgraph4j.RunnableConfig;
 import org.bsc.langgraph4j.StateGraph;
 
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.function.Function;
 
@@ -45,9 +48,9 @@ public class PlanExecuteGraph {
     public static CompiledGraph<PlanExecuteState> build(Function<String, String> llm) throws GraphStateException {
         return new StateGraph<>(PlanExecuteState.SCHEMA, PlanExecuteState::new)
                 .addNode("planner", node_async(state -> {
-                    List<String> plan = TextLists.items(llm.apply("""
+                    List<String> plan = TextLists.items(llm.apply(String.format(Locale.ROOT, """
                             You are a planner. Write a short numbered plan (at most %d steps) to reach the goal.
-                            Goal: %s""".formatted(MAX_PLAN_STEPS, tagged(state.goal()))), MAX_PLAN_STEPS);
+                            Goal: %s""", MAX_PLAN_STEPS, tagged(state.goal()))), MAX_PLAN_STEPS);
                     return planUpdate(plan);
                 }))
                 .addNode("executor", node_async(state -> {
@@ -140,11 +143,12 @@ public class PlanExecuteGraph {
                 .otherwise("Partly done; see the steps above.");
     }
 
+    /** Runs plan-and-execute on a goal from {@code args} (or a default) and prints every plan version, the steps and the answer. */
     public static void main(String[] args) throws Exception {
         String goal = args.length > 0 ? String.join(" ", args) : "Organise a team lunch for 8 people this Friday.";
 
         PlanExecuteState result = build(LlmProvider.resolve(placeholder()))
-                .invoke(Map.of(PlanExecuteState.GOAL, goal))
+                .invoke(GraphInput.args(Map.of(PlanExecuteState.GOAL, goal)), RunnableConfig.builder().build())
                 .orElseThrow();
 
         System.out.println("Goal: " + goal);

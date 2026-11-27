@@ -3,11 +3,14 @@ package com.learning.agents.reasoning;
 import com.learning.agents.llm.LlmProvider;
 import com.learning.agents.llm.ScriptedLlm;
 import org.bsc.langgraph4j.CompiledGraph;
+import org.bsc.langgraph4j.GraphInput;
 import org.bsc.langgraph4j.GraphStateException;
+import org.bsc.langgraph4j.RunnableConfig;
 import org.bsc.langgraph4j.StateGraph;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.function.Function;
@@ -59,7 +62,7 @@ public class ReflexionGraph {
                 .addNode("check", node_async(state -> {
                     Optional<String> error = checker.apply(state.answer());
                     return Map.of(ReflexionState.ERROR, error.orElse(""),
-                            ReflexionState.HISTORY, "attempt %d: %s → %s".formatted(
+                            ReflexionState.HISTORY, String.format(Locale.ROOT, "attempt %d: %s → %s",
                                     state.attempts(), state.answer(), error.map(e -> "FAIL (" + e + ")").orElse("PASS")));
                 }))
                 .addNode("reflect", node_async(state -> Map.of(ReflexionState.LESSONS, llm.apply("""
@@ -91,7 +94,7 @@ public class ReflexionGraph {
     static ReflexionState run(Function<String, String> llm, Function<String, Optional<String>> checker,
                               String task, List<String> priorLessons) throws Exception {
         return build(llm, checker)
-                .invoke(Map.of(ReflexionState.TASK, task, ReflexionState.LESSONS, new ArrayList<>(priorLessons)))
+                .invoke(GraphInput.args(Map.of(ReflexionState.TASK, task, ReflexionState.LESSONS, new ArrayList<>(priorLessons))), RunnableConfig.builder().build())
                 .orElseThrow();
     }
 
@@ -108,7 +111,7 @@ public class ReflexionGraph {
         for (String part : parts) {
             try {
                 numbers.add(Integer.parseInt(part));
-            } catch (NumberFormatException e) {
+            } catch (NumberFormatException _) {
                 return Optional.of("'" + part + "' is not a whole number");
             }
         }
@@ -154,6 +157,7 @@ public class ReflexionGraph {
                 .otherwise("11, 15, 13");
     }
 
+    /** Runs the reflexion loop on its built-in task and prints the attempts, lessons learned and outcome; {@code args} are ignored. */
     public static void main(String[] args) throws Exception {
         // The judge must fit the task: checkPrimes only grades TASK, so this sample doesn't take a task from args.
         if (args.length > 0) {

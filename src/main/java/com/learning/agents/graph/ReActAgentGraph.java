@@ -4,7 +4,9 @@ import com.learning.agents.OllamaConfig;
 import com.learning.agents.graph.ReActTools.ReActTool;
 import dev.langchain4j.model.chat.ChatModel;
 import org.bsc.langgraph4j.CompiledGraph;
+import org.bsc.langgraph4j.GraphInput;
 import org.bsc.langgraph4j.GraphStateException;
+import org.bsc.langgraph4j.RunnableConfig;
 import org.bsc.langgraph4j.StateGraph;
 
 import java.util.List;
@@ -36,14 +38,21 @@ public class ReActAgentGraph {
 
     static final int MAX_STEPS = 6;
 
-    private static final Pattern THOUGHT = Pattern.compile("Thought:\\s*(.*?)\\s*(?=Action:|Final Answer:|$)", Pattern.DOTALL);
+    /** No {@code \s*} around the lazy group (it is stripped instead), which would make a long whitespace run quadratic. */
+    private static final Pattern THOUGHT = Pattern.compile("Thought:(.*?)(?=Action:|Final Answer:|$)", Pattern.DOTALL);
     private static final Pattern ACTION = Pattern.compile("Action:\\s*(\\w+)\\s*\\[(.*?)]", Pattern.DOTALL);
     private static final Pattern FINAL_ANSWER = Pattern.compile("Final Answer:\\s*(.*)", Pattern.DOTALL);
 
-    /** One parsed model reply. Exactly one of {@code action} or {@code answer} is set when the reply is well-formed. */
-    record Step(String thought, String action, String input, String answer) {
-        boolean isFinal() {
-            return answer != null;
+    /** One parsed model reply: a final answer, or an action to run (blank when the reply had no readable action). */
+    sealed interface Step {
+        String thought();
+
+        /** The model is done: its last thought and the answer. */
+        record FinalAnswer(String thought, String answer) implements Step {
+        }
+
+        /** The model wants a tool run: its thought, the tool name and the tool input. */
+        record Action(String thought, String tool, String input) implements Step {
         }
     }
 
@@ -66,19 +75,18 @@ public class ReActAgentGraph {
                 // Reason: show the model the question plus the transcript so far, and parse its next step.
                 .addNode("reason", node_async(state -> {
                     String reply = truncateAtObservation(llm.apply(prompt(state, tools)));
-                    Step step = parse(reply);
                     int steps = state.steps() + 1;
-                    if (step.isFinal()) {
-                        return Map.of(
+                    return switch (parse(reply)) {
+                        case Step.FinalAnswer(_, var answer) -> Map.of(
                                 ReActState.TRANSCRIPT, reply,
-                                ReActState.ANSWER, step.answer(),
+                                ReActState.ANSWER, answer,
                                 ReActState.STEPS, steps);
-                    }
-                    return Map.of(
-                            ReActState.TRANSCRIPT, reply,
-                            ReActState.ACTION, step.action() == null ? "" : step.action(),
-                            ReActState.ACTION_INPUT, step.input() == null ? "" : step.input(),
-                            ReActState.STEPS, steps);
+                        case Step.Action(_, var tool, var input) -> Map.of(
+                                ReActState.TRANSCRIPT, reply,
+                                ReActState.ACTION, tool,
+                                ReActState.ACTION_INPUT, input,
+                                ReActState.STEPS, steps);
+                    };
                 }))
                 // Act: run the chosen tool and record what it returned as an Observation.
                 .addNode("act", node_async(state -> {
@@ -101,6 +109,7 @@ public class ReActAgentGraph {
         return state.answer().isPresent() || state.steps() >= MAX_STEPS ? "finish" : "act";
     }
 
+    /** Builds the model prompt: the tool list, the required reply format, the question and the transcript so far. */
     static String prompt(ReActState state, List<ReActTool> tools) {
         String toolList = tools.stream()
                 .map(t -> "- %s: %s".formatted(t.name(), t.description()))
@@ -131,20 +140,22 @@ public class ReActAgentGraph {
         return (i >= 0 ? reply.substring(0, i) : reply).strip();
     }
 
+    /** Parses a model reply into a {@link Step}; a final answer wins over an action, and a reply with neither becomes an action with a blank tool. */
     static Step parse(String reply) {
         var thought = THOUGHT.matcher(reply);
         String t = thought.find() ? thought.group(1).strip() : "";
         var answer = FINAL_ANSWER.matcher(reply);
         if (answer.find()) {
-            return new Step(t, null, null, answer.group(1).strip());
+            return new Step.FinalAnswer(t, answer.group(1).strip());
         }
         var action = ACTION.matcher(reply);
         if (action.find()) {
-            return new Step(t, action.group(1).strip(), action.group(2).strip(), null);
+            return new Step.Action(t, action.group(1).strip(), action.group(2).strip());
         }
-        return new Step(t, null, null, null);
+        return new Step.Action(t, "", "");   // no readable action: the act node answers "Invalid action"
     }
 
+    /** Runs the ReAct agent against Ollama on a question from {@code args} (or a default) and prints the reasoning transcript and answer. */
     public static void main(String[] args) throws Exception {
         ChatModel model = OllamaConfig.chatModel();
         String question = args.length > 0
@@ -152,7 +163,7 @@ public class ReActAgentGraph {
                 : "How many times taller is the Burj Khalifa than the Eiffel Tower?";
 
         ReActState result = build(model::chat)
-                .invoke(Map.of(ReActState.QUESTION, question))
+                .invoke(GraphInput.args(Map.of(ReActState.QUESTION, question)), RunnableConfig.builder().build())
                 .orElseThrow();
 
         System.out.println("Question: " + question);

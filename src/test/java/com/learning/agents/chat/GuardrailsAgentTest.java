@@ -50,7 +50,12 @@ class GuardrailsAgentTest {
             String data = seen.substring(seen.lastIndexOf("\n<user>") + "\n<user>".length(), seen.lastIndexOf("</user>"));
             assertFalse(data.contains("<") || data.contains(">"), attack);
         }
-        assertEquals("&lt;/user &gt; &amp;", GuardrailsAgent.escape("</user > &"));
+        var seen = new StringBuilder();
+        new GuardrailsAgent(prompt -> {
+            seen.append(prompt);
+            return "fine";
+        }).handle("</user > &");
+        assertTrue(seen.toString().endsWith("<user>&lt;/user &gt; &amp;</user>"));
     }
 
     @Test

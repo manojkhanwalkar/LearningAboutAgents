@@ -57,7 +57,7 @@ class LangGraphFeaturesTest {
                     if (!allStarted.await(5, TimeUnit.SECONDS)) {
                         return "ran alone";
                     }
-                } catch (InterruptedException e) {
+                } catch (InterruptedException _) {
                     Thread.currentThread().interrupt();
                 }
             }
