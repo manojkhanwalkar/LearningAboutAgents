@@ -36,6 +36,11 @@ what tends to go wrong in real systems. Read it next to the code: every chapter 
   22. [Subgraphs](#22-subgraphs--langgraphsubgraphgraph)
   23. [Time travel with checkpoints](#23-time-travel-with-checkpoints--langgraphtimetravelgraph)
   24. [Streaming](#24-streaming--langgraphstreamingagent)
+- Tools and multi-agent
+  25. [Tools from an MCP server](#25-tools-from-an-mcp-server--toolsmcpmcpagent)
+  26. [Tool retrieval](#26-tool-retrieval--toolstoolretrievalagent)
+  27. [Handoffs between agents](#27-handoffs-between-agents--multiagenthandoffgraph)
+  28. [Debate](#28-debate--multiagentdebategraph)
 - [Glossary](#glossary)
 
 ---
@@ -97,7 +102,7 @@ Two LangGraph4j details that trip people up:
 ## Suggested reading order
 
 Start with chapters 1–4 to see a model call, tools, a loop and the ReAct pattern. Then read 5–9 in order: each
-workflow pattern adds one idea to the previous one. Chapters 10–14 are independent; read them when you need them. Read 15–17 after chapter 12, 18–20 after chapter 7, and 21–24 after chapter 9.
+workflow pattern adds one idea to the previous one. Chapters 10–14 are independent; read them when you need them. Read 15–17 after chapter 12, 18–20 after chapter 7, 21–24 after chapter 9, and 25–28 after chapters 2 and 8.
 
 ---
 
@@ -849,6 +854,129 @@ The first words appear in well under a second, so the wait feels much shorter.
 
 ---
 
+## 25. Tools from an MCP server — `tools.mcp.McpAgent`
+
+**The idea.** The *Model Context Protocol* (MCP) is a standard way for an agent to get tools from a separate server.
+Instead of writing each tool into the agent, the agent connects to a server, asks which tools it has
+(`tools/list`), and asks it to run them (`tools/call`). One agent can then use any MCP server, whether it fronts a
+filesystem, GitHub or a database, without code changes.
+
+**How the sample does it.**
+- `DemoMcpServer` is a tiny MCP server built on the JDK's `HttpServer`. It binds to `127.0.0.1` on a free port, caps
+  request bodies at 64 KB, and offers two tools: `capital_of` and `celsius_to_fahrenheit`. Real servers are usually
+  built with an MCP SDK; this one is small enough to read in one sitting.
+- `McpAgent.connect` builds LangChain4j's `DefaultMcpClient` over the real `StreamableHttpMcpTransport`, with 10-second
+  timeouts for connecting and for each call.
+- `ask` lists the tools and shows their names, descriptions and parameters to the model, which replies
+  `CALL tool {json}` or `ANSWER: ...`. This text protocol works with models that lack native tool calling. With one
+  that has it, you'd pass `McpToolProvider` to an AI Service instead.
+
+**An MCP server is someone else's code.** Its tool descriptions and results go into your prompt, so treat them as
+untrusted (*tool poisoning*, injected results):
+- only tools on the agent's own allow-list are shown or callable;
+- descriptions and results are escaped and fenced as data;
+- results are cut to `MAX_RESULT_CHARS` (500);
+- the loop stops after `MAX_CALLS` (4).
+
+LangChain4j throws `McpApplicationError` when a tool reports an error. The agent catches it and gives the error to the
+model as a result, so the model can try again instead of the run crashing.
+
+**What to look for.** "Server offers: [capital_of, celsius_to_fahrenheit]", then two `CALL ... → result` lines (Tokyo,
+86.0), then the answer.
+
+**Try this.**
+- Start `DemoMcpServer` on its own (it has a `main`) and connect another MCP client to the printed URL.
+- Add a third tool to the server, but not to the agent's allow-list, and confirm the model never sees it.
+
+**In production.**
+- Pin which servers and tools an agent may use, and authenticate the connection.
+- Keep a human in the loop (chapter 9) for tools with side effects.
+
+## 26. Tool retrieval — `tools.ToolRetrievalAgent`
+
+**The idea.** An agent with 50 tools can't list all of them in every prompt: it wastes tokens, and small models then
+pick the wrong tool. Treat the tool catalog like a RAG corpus instead. Embed each tool's description once, and for each
+question show the model only the few most relevant tools.
+
+**How the sample does it.**
+- `CATALOG` has 12 small tools: text, units, dates and maths.
+- The constructor embeds "name: description" for each tool. `retrieve` ranks the tools by cosine similarity to the
+  question and keeps `TOP_K` (3).
+- The model sees only those three and replies `CALL tool(input)` or `NONE`. Code runs the tool **only if it was one of
+  the three shown**, so a tool name the model remembers or invents is refused. Bad input becomes an error message,
+  not a crash.
+
+**What to look for.** For each question: the three tools shown (the right one first), the call, and the result
+(26.22 miles, FRIDAY, true).
+
+**Try this.**
+- Ask about kilograms and pounds. Then remove the words "weight" and "kilograms" from that tool's description and see
+  retrieval fail. The description *is* the search key.
+- With real embeddings, ask in different words ("how many miles is a marathon?").
+
+**In production.**
+- Write tool descriptions for retrieval: say what the tool does, in the words users use.
+- Log which tools were shown, so you can tell a retrieval miss from a model mistake.
+
+## 27. Handoffs between agents — `multiagent.HandoffGraph`
+
+**The idea.** In a *handoff* (or "swarm") design, each agent either answers or passes the conversation directly to a
+colleague, like being transferred between departments. There is no supervisor. Compare with chapter 8, where every
+turn goes back to a central manager:
+- handoffs need fewer model calls;
+- a supervisor gives you one place that sees everything.
+
+**How the sample does it.**
+- Three agents: `triage`, `billing` and `tech`. Each one's prompt lists the others and what they handle.
+- Each reply is either `ANSWER: ...` or `HANDOFF: <agent> <reason>`. `turn` records an answer, or sets `ACTIVE` to the
+  target, and the conditional edge after every agent routes to `ACTIVE` or to END.
+- Guards:
+  - targets must be known agents;
+  - an agent can't hand off to itself;
+  - `MAX_HANDOFFS` (3) stops two agents bouncing a user back and forth, ending with an apology and a human follow-up;
+  - the user's request is fenced as data, so it can't write its own `HANDOFF:` line.
+
+**What to look for.** The trail "triage → billing (refund question)", then "billing → tech (...)", then
+"tech: answered", followed by a question that triage answers itself.
+
+**Try this.**
+- Make billing and tech hand off to each other and watch the limit end it.
+- Add a `sales` agent: one `AGENTS` entry.
+
+**In production.**
+- Pass a short summary with each handoff, not just the request. Users hate repeating themselves.
+- Track handoff loops in your logs; they're a sign of overlapping roles.
+
+## 28. Debate — `multiagent.DebateGraph`
+
+**The idea.** Two agents argue opposite sides for a few rounds, each seeing and rebutting the other, and then a
+separate judge decides (Du et al., 2023). Arguing both sides surfaces points a single answer skips. A judge that
+wrote neither side is less attached to either.
+
+**How the sample does it.**
+- `pro` and `con` alternate. Each sees the whole transcript so far and makes one new point plus a rebuttal. `con`
+  advances `ROUND`, and after `ROUNDS` (2) rounds the graph goes to `judge`.
+- The judge must reply `WINNER: PRO` or `WINNER: CON` on its own line, followed by a reason. Anything else is recorded
+  as `UNDECIDED` rather than guessed.
+
+```
+START → pro → con ─┬─ rounds left → pro
+                   └─ done → judge → END
+```
+
+**What to look for.** Four arguments, labelled with their round, then "Winner: CON (...)" with the judge's reason.
+
+**Try this.**
+- Give the two sides different models. A bigger model often "wins" just by sounding better, which is a known
+  weakness of LLM judges.
+- Swap the order (CON first) and see whether the verdict changes; it shouldn't.
+
+**In production.**
+- Debate costs (2 × rounds + 1) calls. Use it for decisions worth that much.
+- Check the judge for position bias and length bias before trusting it.
+
+---
+
 ## Glossary
 
 | Term | Meaning |
@@ -864,6 +992,8 @@ The first words appear in well under a second, so the wait feels much shorter.
 | **Fan-out / fan-in** | Several branches leaving one node and running in parallel, then joining at one node |
 | **Subgraph** | A complete graph used as a single node of a bigger graph |
 | **Streaming** | Delivering output piece by piece as it is produced instead of all at the end |
+| **MCP** | Model Context Protocol: a standard way for an agent to discover and call tools on a separate server |
+| **Handoff** | One agent passing the conversation directly to another, with no central supervisor |
 | **Beam search** | Keep only the best *k* partial solutions at each step instead of exploring all of them |
 | **Replanning** | Rewriting the remaining plan after each step, using what that step revealed |
 | **Memory poisoning** | Planting text in an agent's stored memory so it is injected into later prompts |

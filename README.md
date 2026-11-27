@@ -85,6 +85,15 @@ Same rules as above: placeholder by default, `LLM_BACKEND=ollama` for a real mod
 | `langgraph.TimeTravelGraph` | **Time travel**: checkpoint history, replay from a past step, and fork with changed state | `./mvnw exec:java -Dexec.mainClass=com.learning.agents.langgraph.TimeTravelGraph` |
 | `langgraph.StreamingAgent` | **Streaming**: node events with `graph.stream(...)` and token-by-token output (`OllamaStreamingChatModel` with Ollama) | `./mvnw exec:java -Dexec.mainClass=com.learning.agents.langgraph.StreamingAgent` |
 
+**Tools and multi-agent**
+
+| Example | Concept | Run |
+|---|---|---|
+| `tools.mcp.McpAgent` | **MCP tools**: lists and calls tools on an MCP server (a tiny in-process one over real Streamable HTTP), with an allow-list and fenced, size-capped results | `./mvnw exec:java -Dexec.mainClass=com.learning.agents.tools.mcp.McpAgent` |
+| `tools.ToolRetrievalAgent` | **Tool retrieval**: embeds a 12-tool catalog and shows the model only the 3 most relevant tools per question | `./mvnw exec:java -Dexec.mainClass=com.learning.agents.tools.ToolRetrievalAgent` |
+| `multiagent.HandoffGraph` | **Handoffs (swarm)**: agents pass the conversation directly to each other, with no supervisor, under a handoff limit | `./mvnw exec:java -Dexec.mainClass=com.learning.agents.multiagent.HandoffGraph` |
+| `multiagent.DebateGraph` | **Debate**: pro and con argue for two rounds, then a judge picks a winner (parsed strictly) | `./mvnw exec:java -Dexec.mainClass=com.learning.agents.multiagent.DebateGraph` |
+
 Running them against your Ollama server, for example on another machine on your network:
 
 ```bash

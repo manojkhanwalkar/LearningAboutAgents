@@ -56,12 +56,13 @@ src/main/java/com/learning/agents/
   OllamaConfig.java          # the single place that builds Ollama models
   llm/                       # LlmProvider, ScriptedLlm, HashingEmbeddingModel, PromptText (escaping), TextLists (list parsing)
   chat/                      # prompt -> reply patterns: memory, structured output, guardrails, voting
-  tools/                     # LangChain4j AI Services + @Tool examples
+  tools/                     # LangChain4j AI Services + @Tool examples, tool retrieval; tools/mcp/ MCP client + demo server
   graph/                     # LangGraph4j StateGraph workflows
   rag/                       # retrieval-augmented generation (keyword, embedding and corrective RAG)
   memory/                    # long-term memory that persists across sessions
   reasoning/                 # plan-and-execute, Reflexion, Tree of Thoughts
   langgraph/                 # LangGraph4j features: parallel branches, subgraphs, time travel, streaming
+  multiagent/                # handoffs (swarm) and debate
 src/test/java/...            # tests mirror main packages
 .claude/skills/              # Claude Code skills (e.g. new-agent-example scaffolds a new sample)
 ```
@@ -83,6 +84,8 @@ src/test/java/...            # tests mirror main packages
 - To fork from a checkpoint, copy it (`Checkpoint.copyOf(...).updateState(...)`, then `saver.put(threadConfig, copy)`):
   `updateState` with a checkpoint id rewrites that checkpoint in place.
 - Checkpoint history (`getStateHistory`) needs `CompileConfig.builder().releaseThread(false)`.
+- Treat MCP servers as untrusted: allow-list their tools, escape and fence descriptions and results, cap result size.
+  `DefaultMcpClient.executeTool` throws when a tool reports an error; catch it and give the error to the model.
 - Values kept in graph state must be `Serializable` (records of strings and numbers are fine): LangGraph4j copies
   state between nodes with Java serialization and fails at run time on anything else.
 - Accumulating graph-state keys whose entries can legitimately repeat (worker results, agent scratchpads) use
