@@ -56,17 +56,22 @@ public class RagAgent {
 
     /**
      * Builds the grounded prompt: the retrieved documents in {@code <doc id>} tags (text escaped, so a document can't
-     * close its tag and pose as instructions), citation and refusal rules, then the question.
+     * close its tag and pose as instructions; ids too, quotes included, so an id can't end its attribute), citation and refusal rules, then the question.
      */
     static String prompt(String question, List<Hit> hits) {
         String context = hits.stream()
-                .map(hit -> "<doc id=\"%s\">%s</doc>".formatted(hit.doc().id(), PromptText.escape(hit.doc().text())))
+                .map(hit -> "<doc id=\"%s\">%s</doc>".formatted(escapeId(hit.doc().id()), PromptText.escape(hit.doc().text())))
                 .collect(Collectors.joining("\n"));
         return """
                 Answer the question using ONLY the documents below. Cite the id of each document you use, like [doc-id].
                 If the documents do not contain the answer, reply exactly: %s
                 %s
                 Question: %s""".formatted(NO_ANSWER, context, question);
+    }
+
+    /** Escapes a document id for the {@code id="..."} attribute: markup characters and double quotes. */
+    static String escapeId(String id) {
+        return PromptText.escape(id).replace("\"", "&quot;");
     }
 
     /** Canned replies so the sample runs without a model. */

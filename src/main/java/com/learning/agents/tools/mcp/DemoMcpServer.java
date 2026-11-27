@@ -67,7 +67,7 @@ public final class DemoMcpServer implements AutoCloseable {
         executor.close();
     }
 
-    /** Handles one HTTP request: accepts only POST of a single JSON-RPC object from this server's own origin (405, 403, 415, 413 and 400 otherwise), answers requests with 200 and acknowledges notifications with 202. */
+    /** Handles one HTTP request: accepts only POST of a single JSON-RPC object (405, 415, 413 and 400 otherwise) and rejects a foreign {@code Origin} header (403); a request with no {@code Origin} header is allowed, so this is a browser defence, not caller authentication, answers requests with 200 and acknowledges notifications with 202. */
     private void handle(HttpExchange exchange) throws IOException {
         try (exchange) {
             if (!"POST".equals(exchange.getRequestMethod())) {

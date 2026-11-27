@@ -64,10 +64,14 @@ public final class FactStore {
         }
         List<String> saved;
         try {
-            if (Files.size(file) > MAX_FILE_BYTES) {
+            byte[] bytes;
+            try (var in = Files.newInputStream(file)) {
+                bytes = in.readNBytes((int) MAX_FILE_BYTES + 1);   // one read, so a swapped file can't dodge the cap
+            }
+            if (bytes.length > MAX_FILE_BYTES) {
                 throw new IOException("memory file is larger than " + MAX_FILE_BYTES + " bytes");
             }
-            saved = JSON.readValue(file.toFile(), new TypeReference<>() {
+            saved = JSON.readValue(bytes, new TypeReference<>() {
             });
             if (saved == null || saved.stream().anyMatch(Objects::isNull)) {
                 throw new IOException("memory file must be a JSON list of strings");

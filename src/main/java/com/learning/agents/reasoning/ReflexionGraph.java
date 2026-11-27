@@ -62,7 +62,7 @@ public class ReflexionGraph {
                 .addNode("check", node_async(state -> {
                     Optional<String> error = checker.apply(state.answer());
                     return Map.of(ReflexionState.ERROR, error.orElse(""),
-                            ReflexionState.HISTORY, String.format(Locale.ROOT, "attempt %d: %s → %s", 
+                            ReflexionState.HISTORY, String.format(Locale.ROOT, "attempt %d: %s → %s",
                                     state.attempts(), state.answer(), error.map(e -> "FAIL (" + e + ")").orElse("PASS")));
                 }))
                 .addNode("reflect", node_async(state -> Map.of(ReflexionState.LESSONS, llm.apply("""
