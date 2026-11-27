@@ -41,6 +41,11 @@ what tends to go wrong in real systems. Read it next to the code: every chapter 
   26. [Tool retrieval](#26-tool-retrieval--toolstoolretrievalagent)
   27. [Handoffs between agents](#27-handoffs-between-agents--multiagenthandoffgraph)
   28. [Debate](#28-debate--multiagentdebategraph)
+- Production concerns
+  29. [Evaluating agents](#29-evaluating-agents--opsevalharness)
+  30. [Model cascade and resilience](#30-model-cascade-and-resilience--opsmodelcascade)
+  31. [Observability and token budgets](#31-observability-and-token-budgets--opsobservedllm)
+  32. [Semantic caching](#32-semantic-caching--opssemanticcache)
 - [Glossary](#glossary)
 
 ---
@@ -102,7 +107,7 @@ Two LangGraph4j details that trip people up:
 ## Suggested reading order
 
 Start with chapters 1–4 to see a model call, tools, a loop and the ReAct pattern. Then read 5–9 in order: each
-workflow pattern adds one idea to the previous one. Chapters 10–14 are independent; read them when you need them. Read 15–17 after chapter 12, 18–20 after chapter 7, 21–24 after chapter 9, and 25–28 after chapters 2 and 8.
+workflow pattern adds one idea to the previous one. Chapters 10–14 are independent; read them when you need them. Read 15–17 after chapter 12, 18–20 after chapter 7, 21–24 after chapter 9, 25–28 after chapters 2 and 8, and 29–32 once you are building something real.
 
 ---
 
@@ -986,6 +991,145 @@ START → pro → con ─┬─ rounds left → pro
 
 ---
 
+## 29. Evaluating agents — `ops.EvalHarness`
+
+**The idea.** "Did that prompt change make it better?" can't be answered by trying two questions by hand. An
+*evaluation harness* runs a fixed **golden dataset** (questions with known answers) through each candidate agent or
+model, and scores every answer the same way. Then you compare numbers, always on the same dataset.
+
+**How the sample does it.**
+- `GOLDEN` has five cases. Each has a question, a reference answer and the facts the answer must contain.
+- Every answer is scored twice:
+  - The **code check** (`codeCheck`) asks whether the answer contains every required fact as whole words, ignoring case
+    ("12" doesn't match "120"). It is repeatable, but blind to wording: "Twelve" fails where "12" was expected.
+  - The **LLM judge** compares the answer with the reference and must start its reply with PASS or FAIL. Anything else
+    is recorded as unreadable, not guessed. The answer being graded is fenced as data, so an answer can't tell the
+    judge to pass it.
+- A result where the two scores **disagree** is flagged "← read this one". Those are the cases where the code check is
+  too strict, or the judge too lenient. Reading them is how you calibrate both.
+- `main` scores a strong and a weak placeholder candidate on the same dataset.
+
+**What to look for.** Candidate A: 5/5 on both. Candidate B: the code check gives 2/5 and the judge 3/5. The one
+disagreement is "Twelve", which is right but phrased differently.
+
+**Try this.**
+- Add cases from real user questions, especially ones your agent got wrong.
+- With `LLM_BACKEND=ollama`, run it once per model (`OLLAMA_MODEL=gemma3`, then another) and compare the scores.
+
+**In production.**
+- Run evaluations in CI on every prompt or model change, and fail the build on a drop.
+- Check the judge against human labels before you trust it.
+- Keep the golden set out of your prompts and examples, or you are testing on the answers.
+
+## 30. Model cascade and resilience — `ops.ModelCascade`
+
+**The idea.** Two techniques that make local models practical:
+- **Cascade.** Ask a small, fast model first and let it rate its own confidence. Escalate to a big model only when it
+  is unsure. Most questions are easy, so most never pay for the big model.
+- **Resilience.** Models time out, get overloaded and crash. Every call needs a deadline. Failures that may succeed
+  next time get retried, with backoff and jitter. Failures that won't (a bad request) don't. If the big model stays
+  down, a fallback model answers.
+
+**How the sample does it.**
+- The small model must reply `ANSWER: ...` plus `CONFIDENCE: 0-100`. Below `MIN_CONFIDENCE` (70), or if the reply is
+  unreadable, the cascade escalates.
+- `callWithRetry` runs each call on its own virtual thread with a deadline (`CALL_TIMEOUT`, 60 s). At the deadline it
+  interrupts the call and **stops waiting**. A call that ignores the interrupt keeps running in the background, but the
+  caller is never held. Note the trap this avoids: closing an executor in try-with-resources waits for a cancelled task
+  to finish, which quietly defeats the deadline.
+- `isRetryable` accepts timeouts, LangChain4j's `RetriableException` family (server errors, rate limits) and the
+  sample's `TransientModelException`. Everything else is final.
+- Retries wait with **full jitter**: a random time between 0 and min(2 s, 200 ms × 2^(attempt−1)), for at most
+  `MAX_ATTEMPTS` (3) attempts. The randomness keeps many clients from retrying at the same moment and overloading the
+  server again.
+- **One retry layer.** With Ollama, the models are built with `OllamaConfig.chatModel(name, 0)`, which turns off the
+  client's own retries. Otherwise every failure would be retried 3 × 3 times.
+- Separate models per tier come from `CASCADE_SMALL_MODEL`, `CASCADE_LARGE_MODEL` and `CASCADE_FALLBACK_MODEL`.
+
+**What to look for.**
+- Paris is answered by the small model.
+- The Riemann question escalates: the large model fails once with "503", retries after a random wait, and answers.
+- The Lobachevsky question exhausts the large model's attempts and is answered by the fallback.
+
+**Try this.**
+- Lower `MIN_CONFIDENCE` to 20 and see how much the big model is spared, and what that costs in quality. Use the
+  evaluation harness from chapter 29 to measure it.
+- Make the small model's confidence unreliable (always 99). Self-rated confidence is a weak signal; consider a
+  verifier step instead.
+
+**In production.**
+- Retry only operations that are safe to repeat. A model call is, but a tool that sends an email is not.
+- Cap the total time across retries.
+- Watch your escalation rate. If most questions escalate, the small model is the wrong one.
+
+## 31. Observability and token budgets — `ops.ObservedLlm`
+
+**The idea.** You can't fix what you can't see. Every model call should be measured: how long it took, how big the
+prompt and reply were, and roughly how many tokens it used. A loop cap bounds the *number* of calls, but prompts grow
+every turn, so a **token budget** also bounds their *cost*.
+
+**How the sample does it.**
+- `ObservedLlm` is a **decorator**. It wraps any `Function<String, String>`, so existing samples are observed without
+  changing them.
+- It records each call's latency, prompt and reply size, and estimated tokens (characters ÷ 4, a rule of thumb), and
+  logs the same at debug level.
+- It never records or logs the prompt or reply text, because prompts often hold user data.
+- Before a call, it reserves the prompt's tokens **plus the largest reply allowed** (`maxReplyTokens`). If that doesn't
+  fit, it throws `BudgetExceededException` **without calling the model**. Afterwards the reservation is settled to the
+  reply's real size.
+- Reserving up front means concurrent calls can't all slip past the check together. Counting the reply in the
+  reservation means a long reply can't blow the budget.
+- That only holds if the model really stops at that size, so give it the same output limit (Ollama `numPredict`). A
+  reply that still runs over is charged in full and flagged "REPLY OVER LIMIT".
+- The history is capped (`MAX_RECORDS`).
+- `ObservabilityDemo` wraps the router (chapter 6) to print a call table. It then wraps a runaway supervisor whose
+  writer produces long drafts and never finishes, under a 1,500-token budget with replies of at most 300 tokens.
+
+**What to look for.** The router's table of four calls. The supervisor table grows to about 1,200 tokens, then
+"Outcome: stopped by the budget", before the supervisor's own turn limit is reached. LangGraph4j also logs the
+exception as an ERROR, which is expected.
+
+**Try this.**
+- Wrap the RAG agent and see where its tokens go: retrieval context dominates.
+- Use exact counts: with a LangChain4j `ChatModel`, read `ChatResponse.tokenUsage()`, or add a `ChatModelListener`
+  to the model builder.
+
+**In production.**
+- Send these numbers to your metrics system (latency percentiles, tokens per request, error rate).
+- Set budgets per request and per user.
+- Alert on cost spikes; they are usually loops.
+
+## 32. Semantic caching — `ops.SemanticCache`
+
+**The idea.** Many questions are repeats in different words. A *semantic cache* embeds each question and, when a new
+one is close enough to an earlier one, returns the stored answer instead of calling the model. It saves cost and
+latency, and it's only safe if "close enough" is set carefully.
+
+**How the sample does it.**
+- `lookup` embeds the question and finds the most similar unexpired entry. If its cosine similarity is at least the
+  threshold, that answer is a hit. Otherwise the model is called (outside the lock, so a slow call doesn't block other
+  lookups) and the answer is stored.
+- The cache is bounded twice: at most `MAX_ENTRIES` (100), least recently used evicted first, and a time-to-live, so
+  stale answers expire.
+- `main` runs the same three questions at two thresholds.
+
+**What to look for.**
+- At threshold 0.90, the reworded France question is a hit and the Spain question is a model call.
+- At 0.40, Spain is a **false hit** and gets Paris. That's worse than no cache at all, and it is the risk every
+  semantic cache carries.
+
+**Try this.**
+- With a real embedding model, find the threshold where reworded questions still hit and different ones don't. It
+  will differ from the placeholder's.
+- Cache only answers that don't depend on details a near-duplicate can change: names, numbers, dates, user identity.
+
+**In production.**
+- Scope cache entries per user or tenant, so one user's answer is never served to another.
+- Invalidate them when the underlying data changes.
+- Log hits with their similarity, so false hits can be found.
+
+---
+
 ## Glossary
 
 | Term | Meaning |
@@ -1003,6 +1147,9 @@ START → pro → con ─┬─ rounds left → pro
 | **Streaming** | Delivering output piece by piece as it is produced instead of all at the end |
 | **MCP** | Model Context Protocol: a standard way for an agent to discover and call tools on a separate server |
 | **Handoff** | One agent passing the conversation directly to another, with no central supervisor |
+| **Golden dataset** | A fixed set of inputs with known-good answers, used to compare agents and models fairly |
+| **Full jitter** | Waiting a random time between 0 and the backoff cap before a retry, so clients don't retry in sync |
+| **Decorator** | A wrapper with the same interface as the thing it wraps, adding behaviour (tracing, budgets, caching) |
 | **Beam search** | Keep only the best *k* partial solutions at each step instead of exploring all of them |
 | **Replanning** | Rewriting the remaining plan after each step, using what that step revealed |
 | **Memory poisoning** | Planting text in an agent's stored memory so it is injected into later prompts |

@@ -63,6 +63,7 @@ src/main/java/com/learning/agents/
   reasoning/                 # plan-and-execute, Reflexion, Tree of Thoughts
   langgraph/                 # LangGraph4j features: parallel branches, subgraphs, time travel, streaming
   multiagent/                # handoffs (swarm) and debate
+  ops/                       # evaluation, model cascade and retries, observability and budgets, semantic cache
 src/test/java/...            # tests mirror main packages
 .claude/skills/              # Claude Code skills (e.g. new-agent-example scaffolds a new sample)
 ```
@@ -88,6 +89,9 @@ src/test/java/...            # tests mirror main packages
   escape results, cap result size. `DefaultMcpClient.executeTool` throws `McpApplicationErrorException` when a tool
   reports an error; catch it and give the error to the model. `langchain4j-mcp` is a beta artifact; on JDK 26 it
   warns about reflective final-field mutation, which a future JDK may turn into an error.
+- Retry only recoverable errors (timeouts, LangChain4j `RetriableException`) with full-jitter backoff, and keep one retry
+  layer: build models with `OllamaConfig.chatModel(name, 0)` when your code retries.
+- Never log or record prompt or reply text in observability code; sizes, timings and token counts only.
 - Parse labelled replies (`ANSWER:`, `FINAL:`, `HANDOFF:`) with `llm.Replies`, not a `(?m)^\W*LABEL:` regex, which is
   quadratic on long replies.
 - Format numbers that leave the program (protocol output, tool results, tested strings) with `Locale.ROOT`.
