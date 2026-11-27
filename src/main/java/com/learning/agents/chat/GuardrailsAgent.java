@@ -54,6 +54,11 @@ public class GuardrailsAgent {
         this.llm = llm;
     }
 
+    /**
+     * Runs the input checks, calls the LLM only if they pass, then runs the output checks on its reply.
+     *
+     * @return a refusal with the input violations, or the checked (possibly redacted or blocked) reply
+     */
     public Outcome handle(String userMessage) {
         List<String> inputViolations = checkInput(userMessage);
         if (!inputViolations.isEmpty()) {
@@ -74,6 +79,7 @@ public class GuardrailsAgent {
         return INVISIBLE.matcher(folded).replaceAll("").replaceAll("\\s+", " ").toLowerCase(Locale.ROOT);
     }
 
+    /** Returns every input rule the message breaks (length, injection pattern, blocked topic); empty means allowed. */
     static List<String> checkInput(String message) {
         List<String> violations = new ArrayList<>();
         if (message.length() > MAX_INPUT_CHARS) {
@@ -87,6 +93,7 @@ public class GuardrailsAgent {
         return violations;
     }
 
+    /** Blocks a reply that contains the system-prompt marker; otherwise redacts emails and phone numbers. */
     static Outcome checkOutput(String reply) {
         if (reply.toLowerCase(Locale.ROOT).contains(SYSTEM_PROMPT_MARKER.toLowerCase(Locale.ROOT))) {
             return new Outcome(false, "Sorry, I can't share that.", List.of("reply leaked the system prompt"));

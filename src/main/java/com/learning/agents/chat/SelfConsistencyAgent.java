@@ -28,13 +28,13 @@ import java.util.stream.Collectors;
  * confidence signal: low agreement means "don't trust this answer".
  * <p>
  * Votes only differ if the model samples with some randomness, so with a real model raise the temperature above the
- * {@code OllamaConfig} default of 0.2.
+ * {@code OllamaConfig} default of 0.2. A sample that throws or misses the {@link #SAMPLE_TIMEOUT} deadline abstains.
  */
 public class SelfConsistencyAgent {
 
     static final int SAMPLES = 5;
 
-    /** How long to wait for one sample; a slower or failed sample abstains instead of sinking the whole vote. */
+    /** How long to wait for all samples together; one that fails or is still running then abstains instead of sinking the vote. */
     static final Duration SAMPLE_TIMEOUT = Duration.ofMinutes(3);
 
     private static final Logger log = LoggerFactory.getLogger(SelfConsistencyAgent.class);
@@ -57,7 +57,11 @@ public class SelfConsistencyAgent {
         return solve(llm, question, samples, SAMPLE_TIMEOUT);
     }
 
-    /** Same as {@link #solve(Function, String, int)} with the per-sample timeout passed in, so it can be tested. */
+    /**
+     * Same as {@link #solve(Function, String, int)} with the deadline passed in, so it can be tested.
+     *
+     * @param timeout how long to wait for all samples together; unfinished samples are cancelled and abstain
+     */
     static Optional<Vote> solve(Function<String, String> llm, String question, int samples, Duration timeout)
             throws InterruptedException {
         String prompt = """
@@ -97,6 +101,7 @@ public class SelfConsistencyAgent {
                 .filter(answer -> !answer.isEmpty());
     }
 
+    /** Counts identical answers and returns the most common one; empty if {@code answers} is empty. */
     static Optional<Vote> vote(List<String> answers) {
         Map<String, Long> counts = answers.stream().collect(Collectors.groupingBy(Function.identity(), Collectors.counting()));
         return counts.entrySet().stream()

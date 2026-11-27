@@ -44,6 +44,7 @@ public class RagAgent {
         this.llm = llm;
     }
 
+    /** Retrieves up to {@link #TOP_K} documents and answers from them; returns {@link #NO_ANSWER} without an LLM call if none match. */
     public Answer ask(String question) {
         List<Hit> hits = retriever.search(question, TOP_K);
         if (hits.isEmpty()) {
@@ -52,6 +53,7 @@ public class RagAgent {
         return new Answer(llm.apply(prompt(question, hits)).strip(), hits);
     }
 
+    /** Builds the grounded prompt: the retrieved documents in {@code <doc id>} tags, citation and refusal rules, then the question. */
     static String prompt(String question, List<Hit> hits) {
         String context = hits.stream()
                 .map(hit -> "<doc id=\"%s\">%s</doc>".formatted(hit.doc().id(), hit.doc().text()))

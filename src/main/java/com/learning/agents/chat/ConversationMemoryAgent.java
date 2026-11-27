@@ -48,6 +48,7 @@ public class ConversationMemoryAgent {
         return reply;
     }
 
+    /** Builds the prompt for the next turn: instructions, running summary, recent turns verbatim, then the new message. */
     String prompt(String userMessage) {
         return """
                 You are a helpful assistant. Use the conversation so far to answer.

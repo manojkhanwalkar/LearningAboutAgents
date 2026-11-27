@@ -47,6 +47,12 @@ public class StructuredOutputAgent {
     record Extraction(Optional<ReviewSummary> value, List<String> attempts) {
     }
 
+    /**
+     * Asks for the review summary as JSON and retries with the validation error until it parses or
+     * {@link #MAX_ATTEMPTS} calls have been made.
+     *
+     * @return the summary if any attempt was valid, plus every raw reply in order
+     */
     static Extraction extract(Function<String, String> llm, String review) {
         String task = """
                 Extract a summary of the product review below as JSON with exactly these fields:

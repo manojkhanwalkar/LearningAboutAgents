@@ -36,6 +36,7 @@ public final class KeywordRetriever {
     private final Map<String, Double> idf;
     private final List<Map<String, Double>> vectors;
 
+    /** Indexes {@code docs} once: computes each word's IDF and each document's TF-IDF vector. */
     public KeywordRetriever(List<Doc> docs) {
         this.docs = List.copyOf(docs);
         List<Set<String>> termSets = this.docs.stream().map(d -> Set.copyOf(tokenize(d.text()))).toList();
