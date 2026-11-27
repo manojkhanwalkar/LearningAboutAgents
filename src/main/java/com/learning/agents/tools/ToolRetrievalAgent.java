@@ -2,6 +2,7 @@ package com.learning.agents.tools;
 
 import com.learning.agents.llm.HashingEmbeddingModel;
 import com.learning.agents.llm.LlmProvider;
+import com.learning.agents.llm.Replies;
 import com.learning.agents.llm.ScriptedLlm;
 import dev.langchain4j.data.embedding.Embedding;
 import dev.langchain4j.data.segment.TextSegment;
@@ -31,7 +32,8 @@ public class ToolRetrievalAgent {
 
     static final int TOP_K = 3;
 
-    private static final Pattern CALL = Pattern.compile("CALL\\s+(\\w+)\\((.*?)\\)");
+    /** Applied to the line after {@code CALL}: a tool name and its input up to the <em>last</em> closing parenthesis. */
+    private static final Pattern CALL_ARGS = Pattern.compile("^(\\w+)\\((.*)\\)\\s*$");
 
     /** A tool: its name, the description the model and the retriever both read, and what it does. */
     record Tool(String name, String description, Function<String, String> run) {
@@ -46,17 +48,17 @@ public class ToolRetrievalAgent {
             new Tool("word_count", "Count the words in a piece of text.", s -> String.valueOf(s.isBlank() ? 0 : s.strip().split("\\s+").length)),
             new Tool("reverse_text", "Reverse the characters of a piece of text.", s -> new StringBuilder(s).reverse().toString()),
             new Tool("uppercase", "Convert text to upper case letters.", s -> s.toUpperCase(Locale.ROOT)),
-            new Tool("km_to_miles", "Convert a distance in kilometres to miles.", s -> "%.2f".formatted(Double.parseDouble(s.strip()) * 0.621371)),
-            new Tool("kg_to_pounds", "Convert a weight in kilograms to pounds.", s -> "%.2f".formatted(Double.parseDouble(s.strip()) * 2.20462)),
-            new Tool("celsius_to_fahrenheit", "Convert a temperature in Celsius to Fahrenheit.", s -> "%.1f".formatted(Double.parseDouble(s.strip()) * 9 / 5 + 32)),
+            new Tool("km_to_miles", "Convert a distance in kilometres to miles.", s -> String.format(Locale.ROOT, "%.2f", Double.parseDouble(s.strip()) * 0.621371)),
+            new Tool("kg_to_pounds", "Convert a weight in kilograms to pounds.", s -> String.format(Locale.ROOT, "%.2f", Double.parseDouble(s.strip()) * 2.20462)),
+            new Tool("celsius_to_fahrenheit", "Convert a temperature in Celsius to Fahrenheit.", s -> String.format(Locale.ROOT, "%.1f", Double.parseDouble(s.strip()) * 9 / 5 + 32)),
             new Tool("day_of_week", "Give the day of the week for a date in YYYY-MM-DD format.", s -> LocalDate.parse(s.strip()).getDayOfWeek().toString()),
             new Tool("is_leap_year", "Check whether a year is a leap year.", s -> String.valueOf(java.time.Year.isLeap(Long.parseLong(s.strip())))),
             new Tool("vowel_count", "Count the vowels in a piece of text.", s -> String.valueOf(s.toLowerCase(Locale.ROOT).chars().filter(c -> "aeiou".indexOf(c) >= 0).count())),
             new Tool("palindrome_check", "Check whether a word reads the same backwards (a palindrome).", s -> String.valueOf(new StringBuilder(s.strip()).reverse().toString().equalsIgnoreCase(s.strip()))),
-            new Tool("square_root", "Compute the square root of a number.", s -> "%.4f".formatted(Math.sqrt(Double.parseDouble(s.strip())))),
+            new Tool("square_root", "Compute the square root of a number.", s -> String.format(Locale.ROOT, "%.4f", Math.sqrt(Double.parseDouble(s.strip())))),
             new Tool("percent_of", "Compute a percentage of a number, input like '15% of 80'.", s -> {
                 var m = Pattern.compile("([\\d.]+)%\\s*of\\s*([\\d.]+)").matcher(s);
-                return m.find() ? "%.2f".formatted(Double.parseDouble(m.group(1)) / 100 * Double.parseDouble(m.group(2))) : "error: use 'N% of M'";
+                return m.find() ? String.format(Locale.ROOT, "%.2f", Double.parseDouble(m.group(1)) / 100 * Double.parseDouble(m.group(2))) : "error: use 'N% of M'";
             }));
 
     private record Indexed(Tool tool, Embedding embedding) {
@@ -99,8 +101,8 @@ public class ToolRetrievalAgent {
                 Question: %s""".formatted(shown.stream().map(t -> "- %s: %s".formatted(t.name(), t.description()))
                 .collect(Collectors.joining("\n")), question));
         List<String> names = shown.stream().map(Tool::name).toList();
-        var call = CALL.matcher(reply);
-        if (!call.find()) {
+        var call = Replies.lineAfter(reply, "CALL ").map(CALL_ARGS::matcher).orElse(null);
+        if (call == null || !call.find()) {
             return new Outcome(names, Optional.empty(), "No suitable tool among " + names + ".");
         }
         String name = call.group(1);

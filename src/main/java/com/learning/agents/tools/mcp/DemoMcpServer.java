@@ -22,9 +22,11 @@ import java.util.concurrent.Executors;
  * It supports {@code initialize}, {@code ping}, {@code tools/list} and {@code tools/call}, and offers two tools,
  * {@code capital_of} and {@code celsius_to_fahrenheit}.
  * <p>
- * It is a teaching aid, not a complete server: no SSE stream, no resources or prompts, no auth. It binds to the
- * loopback address only, on a free port, and caps request bodies at {@link #MAX_BODY_BYTES}. Real MCP servers are
- * usually built with an MCP SDK. Close it to stop it.
+ * It is a teaching aid, not a complete server: no SSE stream, no resources or prompts, no auth. Its protections are
+ * the ones the MCP spec asks every local server for: it binds to the loopback address only, on a free port; it rejects
+ * requests whose {@code Origin} is not this server (403), which stops a web page from reaching it, including through
+ * DNS rebinding; it accepts only {@code Content-Type: application/json} (415); and it caps request bodies at
+ * {@link #MAX_BODY_BYTES} (413). Real MCP servers are usually built with an MCP SDK. Close it to stop it.
  */
 public final class DemoMcpServer implements AutoCloseable {
 
@@ -45,7 +47,8 @@ public final class DemoMcpServer implements AutoCloseable {
 
     /** Starts the server on a free loopback port. */
     public static DemoMcpServer start() throws IOException {
-        var http = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
+        // 127.0.0.1 explicitly, not getLoopbackAddress(), which is ::1 when the JVM prefers IPv6 and wouldn't match url().
+        var http = HttpServer.create(new InetSocketAddress(InetAddress.getByName("127.0.0.1"), 0), 0);
         var server = new DemoMcpServer(http);
         http.createContext("/mcp", server::handle);
         http.setExecutor(server.executor);
@@ -71,6 +74,16 @@ public final class DemoMcpServer implements AutoCloseable {
                 exchange.sendResponseHeaders(405, -1);
                 return;
             }
+            String origin = exchange.getRequestHeaders().getFirst("Origin");
+            if (origin != null && !isOwnOrigin(origin)) {
+                exchange.sendResponseHeaders(403, -1);   // a browser page from another site
+                return;
+            }
+            String contentType = exchange.getRequestHeaders().getFirst("Content-Type");
+            if (contentType == null || !contentType.toLowerCase(Locale.ROOT).startsWith("application/json")) {
+                exchange.sendResponseHeaders(415, -1);
+                return;
+            }
             byte[] body = readLimited(exchange.getRequestBody());
             if (body == null) {
                 exchange.sendResponseHeaders(413, -1);
@@ -83,12 +96,27 @@ public final class DemoMcpServer implements AutoCloseable {
                 send(exchange, 400, error(null, -32700, "parse error"));
                 return;
             }
-            if (request == null || !request.has("id")) {
+            if (request == null || !request.isObject()) {
+                // Empty bodies, bare values and JSON-RPC batches (arrays) aren't supported by this tiny server.
+                send(exchange, 400, error(null, -32600, "invalid request: expected one JSON-RPC object"));
+                return;
+            }
+            if (!request.has("id")) {
+                if (!request.has("method")) {
+                    send(exchange, 400, error(null, -32600, "invalid request: no method"));
+                    return;
+                }
                 exchange.sendResponseHeaders(202, -1);   // a notification, e.g. notifications/initialized
                 return;
             }
             send(exchange, 200, respond(request));
         }
+    }
+
+    /** True only for this server's own origin, under either loopback name. */
+    boolean isOwnOrigin(String origin) {
+        int port = http.getAddress().getPort();
+        return origin.equals("http://127.0.0.1:" + port) || origin.equals("http://localhost:" + port);
     }
 
     /** Answers one JSON-RPC request; package-private so the protocol can be unit-tested without HTTP. */
@@ -132,7 +160,7 @@ public final class DemoMcpServer implements AutoCloseable {
                 yield capital == null ? toolText("No capital known for '" + country + "'.", true) : toolText(capital, false);
             }
             case "celsius_to_fahrenheit" -> args.path("celsius").isNumber()
-                    ? toolText("%.1f".formatted(args.path("celsius").asDouble() * 9 / 5 + 32), false)
+                    ? toolText(String.format(Locale.ROOT, "%.1f", args.path("celsius").asDouble() * 9 / 5 + 32), false)
                     : toolText("'celsius' must be a number.", true);
             default -> toolText("Unknown tool: " + name, true);
         };

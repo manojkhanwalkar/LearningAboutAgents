@@ -84,8 +84,13 @@ src/test/java/...            # tests mirror main packages
 - To fork from a checkpoint, copy it (`Checkpoint.copyOf(...).updateState(...)`, then `saver.put(threadConfig, copy)`):
   `updateState` with a checkpoint id rewrites that checkpoint in place.
 - Checkpoint history (`getStateHistory`) needs `CompileConfig.builder().releaseThread(false)`.
-- Treat MCP servers as untrusted: allow-list their tools, escape and fence descriptions and results, cap result size.
-  `DefaultMcpClient.executeTool` throws when a tool reports an error; catch it and give the error to the model.
+- Treat MCP servers as untrusted: pin the description of each allowed tool (never show the server's), fence and
+  escape results, cap result size. `DefaultMcpClient.executeTool` throws `McpApplicationErrorException` when a tool
+  reports an error; catch it and give the error to the model. `langchain4j-mcp` is a beta artifact; on JDK 26 it
+  warns about reflective final-field mutation, which a future JDK may turn into an error.
+- Parse labelled replies (`ANSWER:`, `FINAL:`, `HANDOFF:`) with `llm.Replies`, not a `(?m)^\W*LABEL:` regex, which is
+  quadratic on long replies.
+- Format numbers that leave the program (protocol output, tool results, tested strings) with `Locale.ROOT`.
 - Values kept in graph state must be `Serializable` (records of strings and numbers are fine): LangGraph4j copies
   state between nodes with Java serialization and fails at run time on anything else.
 - Accumulating graph-state keys whose entries can legitimately repeat (worker results, agent scratchpads) use

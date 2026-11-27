@@ -60,6 +60,20 @@ class ToolRetrievalAgentTest {
     }
 
     @Test
+    void inputRunsToTheLastParenthesisAndNumbersIgnoreTheLocale() {
+        var outcome = agent(p -> "Sure!\nCALL reverse_text(a) b)").ask("Reverse the characters of a piece of text");
+        assertEquals("b )a", outcome.result());
+
+        var original = java.util.Locale.getDefault();
+        try {
+            java.util.Locale.setDefault(java.util.Locale.FRANCE);
+            assertEquals("26.22", agent(ToolRetrievalAgent.placeholder()).ask("How far is 42.195 kilometres in miles?").result());
+        } finally {
+            java.util.Locale.setDefault(original);
+        }
+    }
+
+    @Test
     void everyCatalogToolWorks() {
         var byName = new java.util.HashMap<String, ToolRetrievalAgent.Tool>();
         ToolRetrievalAgent.CATALOG.forEach(t -> byName.put(t.name(), t));

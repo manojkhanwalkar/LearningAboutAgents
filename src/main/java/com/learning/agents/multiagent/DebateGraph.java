@@ -2,6 +2,7 @@ package com.learning.agents.multiagent;
 
 import com.learning.agents.llm.LlmProvider;
 import com.learning.agents.llm.PromptText;
+import com.learning.agents.llm.Replies;
 import com.learning.agents.llm.ScriptedLlm;
 import org.bsc.langgraph4j.CompiledGraph;
 import org.bsc.langgraph4j.GraphInput;
@@ -36,7 +37,8 @@ public class DebateGraph {
 
     static final int ROUNDS = 2;
 
-    private static final Pattern WINNER = Pattern.compile("(?im)^\\W*WINNER:\\W*(PRO|CON)\\b\\W*(.*)$");
+    /** Applied to the single line after {@code WINNER:}: the side, then optionally a reason on the same line. */
+    private static final Pattern SIDE = Pattern.compile("^\\W*(PRO|CON)\\b\\W*(.*)$", Pattern.CASE_INSENSITIVE);
 
     /**
      * Builds the graph around a pluggable LLM so it can be tested without Ollama.
@@ -56,14 +58,16 @@ public class DebateGraph {
                             Reply with "WINNER: PRO" or "WINNER: CON" on the first line, then one sentence of reasoning.
                             Motion: %s
                             Debate:
-                            %s""".formatted(motion(state), String.join("\n", state.transcript())));
-                    var m = WINNER.matcher(verdict);
-                    if (!m.find()) {
+                            %s""".formatted(motion(state), PromptText.escape(String.join("\n", state.transcript()))));
+                    var line = Replies.lineAfter(verdict, "WINNER:");
+                    var m = line.map(SIDE::matcher).filter(java.util.regex.Matcher::find);
+                    if (m.isEmpty()) {
                         return Map.of(DebateState.WINNER, "UNDECIDED", DebateState.REASON, "the judge's verdict was unreadable");
                     }
-                    String rest = verdict.substring(m.end()).strip();
-                    String reason = !m.group(2).isBlank() ? m.group(2).strip() : rest;
-                    return Map.of(DebateState.WINNER, m.group(1).toUpperCase(Locale.ROOT), DebateState.REASON, reason);
+                    // The reason is the rest of the verdict line, or else the text on the lines after it.
+                    String afterLine = Replies.after(verdict, "WINNER:").orElse("").substring(line.get().length()).strip();
+                    String reason = !m.get().group(2).isBlank() ? m.get().group(2).strip() : afterLine;
+                    return Map.of(DebateState.WINNER, m.get().group(1).toUpperCase(Locale.ROOT), DebateState.REASON, reason);
                 }))
                 .addEdge(START, "pro")
                 .addEdge("pro", "con")
@@ -81,7 +85,7 @@ public class DebateGraph {
                 Motion: %s
                 Debate so far:
                 %s""".formatted(side, motion(state),
-                state.transcript().isEmpty() ? "(you speak first)" : String.join("\n", state.transcript()))).strip();
+                state.transcript().isEmpty() ? "(you speak first)" : PromptText.escape(String.join("\n", state.transcript())))).strip();
     }
 
     private static String motion(DebateState state) {

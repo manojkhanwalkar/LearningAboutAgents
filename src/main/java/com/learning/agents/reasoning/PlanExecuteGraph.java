@@ -2,6 +2,7 @@ package com.learning.agents.reasoning;
 
 import com.learning.agents.llm.LlmProvider;
 import com.learning.agents.llm.PromptText;
+import com.learning.agents.llm.Replies;
 import com.learning.agents.llm.ScriptedLlm;
 import com.learning.agents.llm.TextLists;
 import org.bsc.langgraph4j.CompiledGraph;
@@ -11,7 +12,6 @@ import org.bsc.langgraph4j.StateGraph;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
-import java.util.regex.Pattern;
 
 import static org.bsc.langgraph4j.StateGraph.END;
 import static org.bsc.langgraph4j.StateGraph.START;
@@ -36,8 +36,6 @@ public class PlanExecuteGraph {
     static final int MAX_STEPS = 6;
     static final int MAX_PLAN_STEPS = 5;
 
-    /** {@code FINAL:} at the start of any line (models often write a sentence first); the answer runs to the end. */
-    private static final Pattern FINAL = Pattern.compile("(?ims)^\\W*FINAL:\\s*(.+)");
 
     /**
      * Builds the graph around a pluggable LLM so it can be tested without Ollama.
@@ -72,9 +70,10 @@ public class PlanExecuteGraph {
                             %s
                             Old remaining plan: %s""".formatted(tagged(state.goal()), done(state),
                             String.join(" | ", state.plan().subList(1, state.plan().size()))));
-                    var finalAnswer = FINAL.matcher(reply);
-                    if (finalAnswer.find()) {
-                        return Map.of(PlanExecuteState.ANSWER, finalAnswer.group(1).strip(), PlanExecuteState.PLAN, List.of());
+                    // FINAL: may follow a sentence of preamble; the answer runs to the end of the reply.
+                    var finalAnswer = Replies.after(reply, "FINAL:");
+                    if (finalAnswer.isPresent()) {
+                        return Map.of(PlanExecuteState.ANSWER, finalAnswer.get(), PlanExecuteState.PLAN, List.of());
                     }
                     return planUpdate(TextLists.items(reply, MAX_PLAN_STEPS));
                 }))
