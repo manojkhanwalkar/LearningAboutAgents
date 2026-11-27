@@ -8,6 +8,7 @@ import org.bsc.langgraph4j.GraphInput;
 import org.bsc.langgraph4j.GraphStateException;
 import org.bsc.langgraph4j.RunnableConfig;
 import org.bsc.langgraph4j.StateGraph;
+import org.bsc.langgraph4j.checkpoint.Checkpoint;
 import org.bsc.langgraph4j.checkpoint.MemorySaver;
 import org.bsc.langgraph4j.state.StateSnapshot;
 
@@ -23,8 +24,9 @@ import static org.bsc.langgraph4j.action.AsyncNodeAction.node_async;
 
 /**
  * Time travel with checkpoints. With a checkpointer every step of a run is saved, so afterwards you can list the
- * history, go back to any step and <b>replay</b> from there (re-running the later nodes), or <b>fork</b>: change the
- * saved state at that step and run on from it, getting a different outcome while the original run stays in history.
+ * history, go back to any step and <b>replay</b> from there (re-running the later nodes), or <b>fork</b>: copy the
+ * saved state at that step, change the copy and run on from it, getting a different outcome while the original step
+ * stays in history (see {@link #fork} for why it copies rather than using {@code updateState}).
  * This is how you debug "why did the agent do that?", retry from just before a bad step instead of from scratch, or
  * let a person correct the state mid-run.
  * <p>
@@ -35,11 +37,12 @@ import static org.bsc.langgraph4j.action.AsyncNodeAction.node_async;
  * <pre>
  *   START → draft → polish → END          (each arrow is a saved checkpoint)
  *
- *   fork: go back to the checkpoint before "draft", set tone = "playful", resume → a different tagline
+ *   fork: copy the checkpoint before "draft", set tone = "playful" on the copy, resume → a different tagline
  * </pre>
  */
 public class TimeTravelGraph {
 
+    private final MemorySaver saver = new MemorySaver();
     private final CompiledGraph<TaglineState> graph;
     private final RunnableConfig thread;
 
@@ -59,7 +62,7 @@ public class TimeTravelGraph {
                 .addEdge("draft", "polish")
                 .addEdge("polish", END)
                 .compile(CompileConfig.builder()
-                        .checkpointSaver(new MemorySaver())
+                        .checkpointSaver(saver)
                         .releaseThread(false)   // keep the thread's checkpoints after the run, so history is available
                         .build());
         this.thread = RunnableConfig.builder().threadId(threadId).build();
@@ -94,9 +97,18 @@ public class TimeTravelGraph {
         return graph.invoke(GraphInput.resume(), at(checkpointId)).orElseThrow();
     }
 
-    /** Changes the state saved at a checkpoint, then resumes from the changed copy; the original stays in history. */
+    /**
+     * Copies a saved checkpoint, applies {@code changes} to the copy, saves the copy as a <em>new</em> checkpoint and
+     * resumes from it. The original checkpoint is untouched, so it can still be replayed or forked again.
+     * <p>
+     * Why not {@code graph.updateState(configWithCheckpointId, changes)}? Given a checkpoint id, LangGraph4j rewrites
+     * that checkpoint in place, which would destroy the step you forked from.
+     */
     TaglineState fork(String checkpointId, Map<String, Object> changes) throws Exception {
-        RunnableConfig forked = graph.updateState(at(checkpointId), changes);
+        Checkpoint original = saver.get(at(checkpointId))
+                .orElseThrow(() -> new IllegalArgumentException("no checkpoint " + checkpointId));
+        Checkpoint copy = Checkpoint.copyOf(original).updateState(changes, TaglineState.SCHEMA);
+        RunnableConfig forked = saver.put(thread, copy);   // a thread-only config appends instead of replacing
         return graph.invoke(GraphInput.resume(), forked).orElseThrow();
     }
 

@@ -755,20 +755,21 @@ subgraph can be built and tested on its own.
   are `MIN_NOTES` (3) notes or `MAX_ROUNDS` (3) rounds have run. Then `summarize` condenses the notes.
 - `build(llm)` is the parent, outline → research → write. It plugs the subgraph in with
   `addNode("research", research(llm))`.
-- LangGraph4j requires the subgraph to have the **same state type** as the parent (`ReportState`). The subgraph
-  reads the parent's outline and leaves notes and a summary for the parent's `write` step.
+- Parent and subgraph share **one state type** (`ReportState`). The subgraph reads the parent's outline and leaves
+  notes and a summary for the parent's `write` step.
 
-**The pitfall this sample found.** When the subgraph finishes, LangGraph4j merges the subgraph's *whole* final state
-back into the parent, so any list the parent had already filled is appended a second time. The first version of this
-sample printed the parent's "outline: done" twice. The fix:
-- keys that cross the boundary (`LOG`, `RESEARCH_LOG`) use plain `Channels.appender`, which drops values already in
-  the list;
-- their entries are made unique, for example with round numbers;
-- `NOTES`, written only inside the subgraph, keeps duplicates.
+**Compiled or not: the pitfall this sample found.** LangGraph4j accepts a subgraph in two forms:
+- `addNode(id, stateGraph)`, used here, **inlines** the subgraph: its nodes update the shared state exactly like the
+  parent's own nodes.
+- `addNode(id, compiledGraph)` runs it as a separate graph and merges its *whole* final state back when it finishes.
+  Any list the parent had already filled then gets appended a **second time**. The first version of this sample
+  printed the parent's "outline: done" twice.
 
-This also explains why LangGraph4j's default appender de-duplicates.
+If you must use a compiled subgraph, give it keys the parent never writes, or use the de-duplicating
+`Channels.appender` on shared lists. That plain appender also drops legitimate repeats, so it is a fallback, not the
+default.
 
-**What to look for.** The `[report]` lines (outline, write) and the `[research]` lines (two gather rounds,
+**What to look for.** The `[report]` lines (outline, write) and the `[research]` lines (two gather rounds and
 summarize), each printed once, then the notes and the report.
 
 **Try this.**
@@ -796,14 +797,18 @@ Use this to debug "why did it do that?", to retry from just before a bad step, o
   thread's checkpoints are released and the history comes back empty.
 - `history()` reverses `getStateHistory`, which returns newest first. Each snapshot's `nextNodeId()` says which node
   would run if you resumed from it, and `checkpointBefore("draft")` finds the right checkpoint that way.
-- `replay(id)` invokes `GraphInput.resume()` with `checkPointId(id)` in the config. `fork(id, changes)` first calls
-  `updateState(config, changes)`, which returns a config pointing at the new checkpoint, and resumes from that.
+- `replay(id)` invokes `GraphInput.resume()` with `checkPointId(id)` in the config.
+- `fork(id, changes)` copies the saved checkpoint (`Checkpoint.copyOf`), applies the changes to the copy, saves the
+  copy as a new checkpoint (`saver.put` with a config that names only the thread), and resumes from it. Why not
+  `graph.updateState(config, changes)`? Given a checkpoint id, LangGraph4j **rewrites that checkpoint in place**, so
+  the step you forked from would be gone and could no longer be replayed. The first version of this sample made
+  exactly that mistake.
 
 **What to look for.**
 - The history: `__START__`, `draft`, `polish`.
 - The replay gives the same tagline, because the placeholder is deterministic. A real model would likely vary.
 - The fork with `tone = "playful"` gives a different tagline.
-- The checkpoint count grows, because the fork added steps and removed none.
+- The checkpoint count grows, because the fork added steps, and the original "before draft" step is still there.
 
 **Try this.**
 - Fork from *before polish* instead, and edit the draft itself.

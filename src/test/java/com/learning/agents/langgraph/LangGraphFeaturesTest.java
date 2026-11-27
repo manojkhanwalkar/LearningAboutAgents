@@ -13,6 +13,9 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import org.bsc.langgraph4j.GraphInput;
+import org.bsc.langgraph4j.RunnableConfig;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -66,6 +69,7 @@ class LangGraphFeaturesTest {
             result = ParallelBranchesGraph.run(graph, "q", executor);
         }
 
+        assertEquals(3, result.views().size(), "no branch update may be lost when branches run in parallel");
         assertTrue(result.views().stream().allMatch(view -> view.endsWith("together")), result.views().toString());
     }
 
@@ -127,12 +131,14 @@ class LangGraphFeaturesTest {
     void subgraphWorksOnItsOwnAndStopsAtMaxRounds() throws Exception {
         var gathers = new AtomicInteger();
         ReportState result = SubgraphGraph.research(prompt -> {
-            if (prompt.startsWith("You are a researcher")) {
-                gathers.incrementAndGet();
-                return "";   // never finds anything
-            }
-            return "nothing found";
-        }).invoke(Map.of(ReportState.TOPIC, "t", ReportState.OUTLINE, "o")).orElseThrow();
+                    if (prompt.startsWith("You are a researcher")) {
+                        gathers.incrementAndGet();
+                        return "";   // never finds anything
+                    }
+                    return "nothing found";
+                }).compile()
+                .invoke(GraphInput.args(Map.of(ReportState.TOPIC, "t", ReportState.OUTLINE, "o")), RunnableConfig.builder().build())
+                .orElseThrow();
 
         assertEquals(SubgraphGraph.MAX_ROUNDS, gathers.get());
         assertEquals("nothing found", result.summary());
@@ -170,7 +176,11 @@ class LangGraphFeaturesTest {
         assertEquals(original, replayed);
         assertTrue(forked.contains("brain"));
         assertFalse(original.contains("brain"));
-        assertTrue(agent.history().size() > 3, "the forked run adds checkpoints without removing the original ones");
+        // The step we forked from must survive the fork: it is still in history, unchanged, and can be replayed again.
+        var survivor = agent.history().stream().filter(s -> s.checkpointId().equals(beforeDraft)).findFirst().orElseThrow();
+        assertEquals("friendly", survivor.state().tone());
+        assertEquals(original, agent.replay(beforeDraft).tagline().orElseThrow());
+        assertTrue(agent.fork(beforeDraft, Map.of(TaglineState.TONE, "playful")).tagline().orElseThrow().contains("brain"));
     }
 
     @Test

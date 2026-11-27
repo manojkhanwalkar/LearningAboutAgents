@@ -60,9 +60,48 @@ class StreamingLlmTest {
     }
 
     @Test
-    void aReplyThatNeverFinishesTimesOut() {
-        var llm = new OllamaStreamingLlm(fake(handler -> handler.onPartialResponse("...")), Duration.ofMillis(100));
-        assertThrows(IllegalStateException.class, () -> llm.stream("hi", t -> { }));
+    void aTimedOutStreamIsCancelledAndLateTokensAreDropped() throws Exception {
+        var cancelled = new java.util.concurrent.atomic.AtomicBoolean();
+        var keepGoing = new java.util.concurrent.CountDownLatch(1);
+        List<String> tokens = java.util.Collections.synchronizedList(new ArrayList<>());
+        var llm = new OllamaStreamingLlm(fake(handler -> {
+            var context = new dev.langchain4j.model.chat.response.PartialResponseContext(
+                    new dev.langchain4j.model.chat.response.StreamingHandle() {
+                        @Override
+                        public void cancel() {
+                            cancelled.set(true);
+                        }
+
+                        @Override
+                        public boolean isCancelled() {
+                            return cancelled.get();
+                        }
+                    });
+            handler.onPartialResponse(new dev.langchain4j.model.chat.response.PartialResponse("early "), context);
+            try {
+                keepGoing.await();   // stall past the timeout, then keep "generating"
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+            handler.onPartialResponse(new dev.langchain4j.model.chat.response.PartialResponse("late"), context);
+        }), Duration.ofMillis(100));
+
+        var e = assertThrows(IllegalStateException.class, () -> llm.stream("hi", tokens::add));
+        keepGoing.countDown();
+        Thread.sleep(100);
+
+        assertTrue(e.getMessage().contains("no complete reply within"));
+        assertTrue(cancelled.get(), "the request must be cancelled");
+        assertEquals(List.of("early "), tokens);
+    }
+
+    @Test
+    void anEmptyReplyBecomesAnEmptyString() {
+        // A reply made only of tool calls has no text: aiMessage().text() is null.
+        var toolOnly = AiMessage.from(List.of(dev.langchain4j.agent.tool.ToolExecutionRequest.builder().name("t").arguments("{}").build()));
+        var llm = new OllamaStreamingLlm(fake(handler ->
+                handler.onCompleteResponse(ChatResponse.builder().aiMessage(toolOnly).build())), Duration.ofSeconds(5));
+        assertEquals("", llm.stream("hi", t -> { }));
     }
 
     @Test
@@ -80,6 +119,9 @@ class StreamingLlmTest {
     @Test
     void resolveStreamingDefaultsToThePlaceholder() {
         StreamingLlm placeholder = (prompt, onToken) -> "x";
+        StreamingLlm other = (prompt, onToken) -> "y";
+        assertSame(placeholder, LlmProvider.resolve(null, placeholder, () -> other));
+        assertSame(other, LlmProvider.resolve("ollama", placeholder, () -> other));
         String backend = System.getenv(LlmProvider.ENV);
         if (backend == null || backend.isBlank()) {
             assertSame(placeholder, LlmProvider.resolveStreaming(placeholder));

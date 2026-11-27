@@ -25,18 +25,14 @@ public class ReportState extends AgentState {
     public static final String ROUNDS = "rounds";
 
     /**
-     * {@code notes}, {@code log} and {@code researchLog} accumulate; the rest are overwritten.
-     * <p>
-     * When the subgraph finishes, LangGraph4j merges its <em>whole</em> final state back into the parent, so every
-     * list it saw on the way in, such as the parent's log lines written before it started, is appended a second time.
-     * The plain {@code Channels.appender} drops values that are already in the list, which undoes exactly that, so
-     * keys that cross the subgraph boundary use it and their entries are made unique (round numbers, node names).
-     * {@code notes} is only written inside the subgraph, which runs once, so it keeps duplicates.
+     * {@code notes}, {@code log} and {@code researchLog} accumulate, duplicates kept; the rest are overwritten. This
+     * is safe because the subgraph is added uncompiled (see {@link SubgraphGraph}); a compiled subgraph would append
+     * the parent's existing entries a second time when its final state is merged back.
      */
     public static final Map<String, Channel<?>> SCHEMA = Map.of(
             NOTES, Channels.appenderWithDuplicate(ArrayList::new),
-            LOG, Channels.appender(ArrayList::new),
-            RESEARCH_LOG, Channels.appender(ArrayList::new)
+            LOG, Channels.appenderWithDuplicate(ArrayList::new),
+            RESEARCH_LOG, Channels.appenderWithDuplicate(ArrayList::new)
     );
 
     public ReportState(Map<String, Object> initData) {

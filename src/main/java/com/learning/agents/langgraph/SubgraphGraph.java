@@ -23,10 +23,13 @@ import static org.bsc.langgraph4j.action.AsyncNodeAction.node_async;
  * step: outline → research → write. This is how larger agent systems are built from parts that can each be built and
  * tested on their own ({@link #research} is tested without the parent) and that hide their inner steps from the parent.
  * <p>
- * The parent and the subgraph share one state type ({@link ReportState}), which is what LangGraph4j's
- * {@code addNode(String, CompiledGraph)} requires: the subgraph reads the outline the parent wrote and writes notes
- * and a summary the parent then uses. Watch out: the subgraph's whole final state is merged back into the parent, so
- * lists the parent had already filled would be appended twice; {@link ReportState#SCHEMA} explains the fix.
+ * The parent and the subgraph share one state type ({@link ReportState}): the subgraph reads the outline the parent
+ * wrote and writes notes and a summary the parent then uses.
+ * <p>
+ * LangGraph4j accepts a subgraph in two forms, and the difference matters. {@code addNode(id, StateGraph)} (used
+ * here) inlines the subgraph's nodes into the parent, so they update the shared state exactly like parent nodes.
+ * {@code addNode(id, CompiledGraph)} runs it as a separate graph and merges its <em>whole</em> final state back
+ * afterwards, so any list the parent had already filled gets appended a second time.
  *
  * <pre>
  *   report:    START → outline → [ research ] → write → END
@@ -44,7 +47,7 @@ public class SubgraphGraph {
      * The research team as a standalone graph: gather notes (at most {@link #MAX_ROUNDS} rounds) until there are
      * {@link #MIN_NOTES}, then summarise them.
      */
-    public static CompiledGraph<ReportState> research(Function<String, String> llm) throws GraphStateException {
+    public static StateGraph<ReportState> research(Function<String, String> llm) throws GraphStateException {
         return new StateGraph<>(ReportState.SCHEMA, ReportState::new)
                 .addNode("gather", node_async(state -> {
                     String reply = llm.apply("""
@@ -54,7 +57,7 @@ public class SubgraphGraph {
                             Outline: %s""".formatted(String.join("\n", state.notes()), state.outline()));
                     var facts = TextLists.items(reply, 2);
                     return Map.of(ReportState.NOTES, facts, ReportState.ROUNDS, state.rounds() + 1,
-                            ReportState.RESEARCH_LOG, "gather round %d: +%d note(s)".formatted(state.rounds() + 1, facts.size()));
+                                ReportState.RESEARCH_LOG, "gather round %d: +%d note(s)".formatted(state.rounds() + 1, facts.size()));
                 }))
                 .addNode("summarize", node_async(state -> Map.of(
                         ReportState.SUMMARY, llm.apply("Summarise these research notes in two sentences:\n"
@@ -64,8 +67,7 @@ public class SubgraphGraph {
                 .addConditionalEdges("gather",
                         edge_async(SubgraphGraph::afterGather),
                         Map.of("gather", "gather", "summarize", "summarize"))
-                .addEdge("summarize", END)
-                .compile();
+                .addEdge("summarize", END);
     }
 
     /**
@@ -78,7 +80,7 @@ public class SubgraphGraph {
                 .addNode("outline", node_async(state -> Map.of(
                         ReportState.OUTLINE, llm.apply("Write a one-line outline for a short report on: " + state.topic()).strip(),
                         ReportState.LOG, "outline: done")))
-                .addNode("research", research(llm))   // the whole research graph is one node here
+                .addNode("research", research(llm))   // the whole research graph is one step here
                 .addNode("write", node_async(state -> Map.of(
                         ReportState.REPORT, llm.apply("""
                                 Write a three-sentence report.
