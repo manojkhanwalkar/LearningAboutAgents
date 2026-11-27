@@ -10,6 +10,7 @@ import dev.langchain4j.store.embedding.EmbeddingSearchRequest;
 import dev.langchain4j.store.embedding.inmemory.InMemoryEmbeddingStore;
 
 import java.io.Serializable;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -32,6 +33,11 @@ public final class VectorRetriever {
     static final int CHUNK_CHARS = 300;
     static final int OVERLAP_CHARS = 40;
     static final String SOURCE = "source";
+    /**
+     * Chunks per embedding call while indexing. Each call is one HTTP request to Ollama, so batching across documents
+     * turns one request per document into one per {@value} chunks, and still caps how big a single request can get.
+     */
+    static final int EMBED_BATCH = 32;
 
     private final EmbeddingModel embeddings;
     private final InMemoryEmbeddingStore<TextSegment> store = new InMemoryEmbeddingStore<>();
@@ -41,12 +47,17 @@ public final class VectorRetriever {
         this.embeddings = embeddings;
     }
 
-    /** Splits, embeds and stores each document; the map key becomes the citation id of its chunks. */
+    /**
+     * Splits, embeds and stores each document; the map key becomes the citation id of its chunks. Chunks are stored in
+     * document order and embedded {@link #EMBED_BATCH} at a time, across document boundaries.
+     */
     public VectorRetriever index(Map<String, String> documentsById) {
-        documentsById.forEach((id, text) -> {
-            List<TextSegment> chunks = splitter.split(Document.from(text, Metadata.from(SOURCE, id)));
-            store.addAll(embeddings.embedAll(chunks).content(), chunks);
-        });
+        List<TextSegment> chunks = new ArrayList<>();
+        documentsById.forEach((id, text) -> chunks.addAll(splitter.split(Document.from(text, Metadata.from(SOURCE, id)))));
+        for (int from = 0; from < chunks.size(); from += EMBED_BATCH) {
+            List<TextSegment> batch = chunks.subList(from, Math.min(from + EMBED_BATCH, chunks.size()));
+            store.addAll(embeddings.embedAll(batch).content(), batch);
+        }
         return this;
     }
 
