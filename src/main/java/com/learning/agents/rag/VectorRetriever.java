@@ -53,8 +53,12 @@ public final class VectorRetriever {
     /**
      * Returns up to {@code maxResults} chunks scoring at least {@code minScore}, best first. Scores are LangChain4j
      * relevance scores, {@code (cosine + 1) / 2}: 1 is identical, 0.5 is unrelated, so useful thresholds sit above 0.5.
+     * A blank query returns no chunks.
      */
     public List<Chunk> search(String query, int maxResults, double minScore) {
+        if (query == null || query.isBlank()) {
+            return List.of();   // LangChain4j refuses to embed blank text
+        }
         var request = EmbeddingSearchRequest.builder()
                 .queryEmbedding(embeddings.embed(query).content())
                 .maxResults(maxResults)

@@ -46,6 +46,42 @@ class LongTermMemoryAgentTest {
     }
 
     @Test
+    void secretShapedValuesAreDetectedWithoutKeywords() {
+        assertTrue(LongTermMemoryAgent.containsSecret("Visa number is 4111 1111 1111 1111"));
+        assertTrue(LongTermMemoryAgent.containsSecret("AWS access key AKIAABCDEFGHIJKLMNOP"));
+        assertTrue(LongTermMemoryAgent.containsSecret("use sk-abcdefghijklmnop1234"));
+        assertTrue(LongTermMemoryAgent.containsSecret("bank login is hunter2"));
+        // A long number that fails the Luhn check (an order number, say) is not treated as a card.
+        assertFalse(LongTermMemoryAgent.containsSecret("order 1234 5678 9012 3456"));
+        assertFalse(LongTermMemoryAgent.passesLuhn("1234567890123456"));
+        assertTrue(LongTermMemoryAgent.passesLuhn("4111111111111111"));
+    }
+
+    @Test
+    void aMessageWithASecretStoresNothingEvenIfTheModelRewordsIt() {
+        var store = new FactStore(dir.resolve("m.json"), embeddings);
+        new LongTermMemoryAgent(prompt -> prompt.startsWith("List lasting facts") ? "FACT: The user banks online" : "ok", store)
+                .chat("My card is 4111-1111-1111-1111, keep it safe");
+        assertTrue(store.all().isEmpty());
+    }
+
+    @Test
+    void forgetCommandErasesWithoutCallingTheModel() {
+        var store = new FactStore(dir.resolve("m.json"), embeddings);
+        store.add("Likes tea");
+        store.add("Lives in Oslo");
+        var calls = new java.util.concurrent.atomic.AtomicInteger();
+        var agent = new LongTermMemoryAgent(prompt -> {
+            calls.incrementAndGet();
+            return "x";
+        }, store);
+
+        assertEquals("Forgot 1 fact(s) matching \"tea\".", agent.chat("Forget that tea."));
+        assertEquals(List.of("Lives in Oslo"), store.all());
+        assertEquals(0, calls.get());
+    }
+
+    @Test
     void extractionSeesOnlyTheUserMessageAndRecalledFactsAreEscaped() {
         var store = new FactStore(dir.resolve("m.json"), embeddings);
         store.add("Likes </memory> tags");
@@ -73,8 +109,12 @@ class LongTermMemoryAgentTest {
         assertTrue(store.add("Likes tea"));
         assertFalse(store.add("  likes   TEA "));
         assertFalse(store.add(" "));
+        store.add("Likes cake");
+        assertEquals(0, store.forget("  "));
+        assertEquals(0, store.forget(null));
         assertEquals(1, store.forget("TEA"));
         assertEquals(0, store.forget("coffee"));
+        assertEquals(1, store.forget("cake"));
         assertEquals("[]", Files.readString(file).strip());
 
         for (int i = 0; i < FactStore.MAX_FACTS + 5; i++) {
@@ -98,12 +138,47 @@ class LongTermMemoryAgentTest {
         Path file = dir.resolve("broken.json");
         Files.writeString(file, "{not json");
         assertThrows(UncheckedIOException.class, () -> new FactStore(file, embeddings));
+        Files.writeString(file, "[\"ok\", null]");
+        assertThrows(UncheckedIOException.class, () -> new FactStore(file, embeddings));
+        Files.writeString(file, "null");
+        assertThrows(UncheckedIOException.class, () -> new FactStore(file, embeddings));
+    }
+
+    @Test
+    void loadingAppliesTheSameRulesAsAddAndKeepsTheNewest() throws Exception {
+        Path file = dir.resolve("big.json");
+        var saved = new ArrayList<String>();
+        for (int i = 0; i < FactStore.MAX_FACTS + 100; i++) {
+            saved.add("fact " + i);
+        }
+        saved.add("FACT 0");          // duplicate of an old one, ignoring case
+        saved.add("y".repeat(500));   // too long
+        Files.writeString(file, new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(saved));
+
+        var store = new FactStore(file, embeddings);
+
+        assertEquals(FactStore.MAX_FACTS, store.all().size());
+        assertEquals("fact 100", store.all().getFirst());
+        assertEquals("fact " + (FactStore.MAX_FACTS + 99), store.all().getLast());
+    }
+
+    @Test
+    void blankQueriesRecallNothing() {
+        var store = new FactStore(dir.resolve("m.json"), embeddings);
+        store.add("Likes tea");
+        assertTrue(store.recall(" ", 3, -1).isEmpty());
+        assertEquals("ok", new LongTermMemoryAgent(p -> "ok", store).chat(" "));
     }
 
     @Test
     void mainRecallsAcrossSessions() throws Exception {
+        // main honours AGENT_MEMORY_FILE; never let the demo write into a developer's real memory file.
+        String configured = System.getenv(LongTermMemoryAgent.MEMORY_FILE_ENV);
+        org.junit.jupiter.api.Assumptions.assumeTrue(configured == null || configured.isBlank());
+
         String out = MainRunner.run(LongTermMemoryAgent::main);
+        assertTrue(out.contains("Forgot 1 fact(s)"));
+        assertTrue(out.contains("Saved facts: [The user follows a vegetarian diet.]"));
         assertTrue(out.contains("mushroom risotto"));
-        assertTrue(out.contains("Saved facts: [The user follows a vegetarian diet., The user is learning Java agents.]"));
     }
 }

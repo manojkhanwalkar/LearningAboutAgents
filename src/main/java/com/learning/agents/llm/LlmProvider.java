@@ -32,7 +32,10 @@ public final class LlmProvider {
 
     /** Returns the backend named by {@value #ENV}, falling back to {@code placeholder}. */
     public static Function<String, String> resolve(Function<String, String> placeholder) {
-        return resolve(System.getenv(ENV), placeholder, () -> OllamaConfig.chatModel()::chat);
+        return resolve(System.getenv(ENV), placeholder, () -> {
+            log.info("Chat model: {}", OllamaConfig.modelName());
+            return OllamaConfig.chatModel()::chat;
+        });
     }
 
     /**
@@ -40,7 +43,10 @@ public final class LlmProvider {
      * {@link HashingEmbeddingModel}), or {@link OllamaConfig#embeddingModel()} when it is {@code ollama}.
      */
     public static EmbeddingModel resolveEmbeddings(EmbeddingModel placeholder) {
-        return resolve(System.getenv(ENV), placeholder, OllamaConfig::embeddingModel);
+        return resolve(System.getenv(ENV), placeholder, () -> {
+            log.info("Embedding model: {}", OllamaConfig.embeddingModelName());
+            return OllamaConfig.embeddingModel();
+        });
     }
 
     /**

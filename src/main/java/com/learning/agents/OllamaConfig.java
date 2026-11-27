@@ -52,7 +52,7 @@ public final class OllamaConfig {
                 .build();
     }
 
-    /** The embedding model the RAG, memory, cache and tool-retrieval samples use when {@code LLM_BACKEND=ollama}. */
+    /** The embedding model the embedding samples (RAG, memory) use when {@code LLM_BACKEND=ollama}. */
     public static OllamaEmbeddingModel embeddingModel() {
         return OllamaEmbeddingModel.builder()
                 .baseUrl(baseUrl())

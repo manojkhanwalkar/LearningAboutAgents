@@ -54,6 +54,19 @@ class CorrectiveRagGraphTest {
     }
 
     @Test
+    void blankRewriteSearchesWithTheQuestionInstead() throws Exception {
+        CorrectiveRagState result = run(prompt -> {
+            if (prompt.contains("found nothing useful")) {
+                return " ";
+            }
+            return prompt.startsWith("Does this document") ? "no" : "x";
+        }, "leave policy");
+
+        assertEquals("leave policy", result.query());
+        assertEquals(CorrectiveRagGraph.NO_ANSWER, result.answer().orElseThrow());
+    }
+
+    @Test
     void graderNeedsAnExplicitYes() {
         assertTrue(CorrectiveRagGraph.isYes(" **Yes**, it does"));
         assertFalse(CorrectiveRagGraph.isYes("Not really, yes-ish"));
