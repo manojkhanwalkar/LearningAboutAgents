@@ -23,6 +23,10 @@ what tends to go wrong in real systems. Read it next to the code: every chapter 
   12. [Retrieval-augmented generation](#12-retrieval-augmented-generation--ragragagent)
   13. [Guardrails](#13-guardrails--chatguardrailsagent)
   14. [Self-consistency and parallel calls](#14-self-consistency-and-parallel-calls--chatselfconsistencyagent)
+- Retrieval and memory
+  15. [Embedding RAG with rewriting and reranking](#15-embedding-rag-with-rewriting-and-reranking--ragembeddingragagent)
+  16. [Corrective RAG](#16-corrective-rag--ragcorrectiveraggraph)
+  17. [Long-term memory](#17-long-term-memory--memorylongtermmemoryagent)
 - [Glossary](#glossary)
 
 ---
@@ -58,6 +62,11 @@ so running them needs a server: `HelloOllama`, `ToolCallingAgent`, `WriterReview
 `ToolCallingAgent` also needs a model with native tool calling, such as `llama3.1` or `qwen3`. The two graphs still
 take a `Function` in `build(...)`, so their tests run on fakes.
 
+**Embeddings.** Samples that search by meaning take a LangChain4j `EmbeddingModel`. With the placeholder backend
+that is `HashingEmbeddingModel`, which hashes words into a 512-number vector, so texts that share words come out
+similar. With `LLM_BACKEND=ollama` it is `OLLAMA_EMBEDDING_MODEL` (default `nomic-embed-text`), which also links
+words with similar meanings.
+
 **Graphs in five lines.** The `graph/` samples use [LangGraph4j](https://github.com/langgraph4j/langgraph4j):
 
 - **State**: a typed map shared by all steps. Each sample has its own `XxxState extends AgentState` with key constants
@@ -79,7 +88,7 @@ Two LangGraph4j details that trip people up:
 ## Suggested reading order
 
 Start with chapters 1–4 to see a model call, tools, a loop and the ReAct pattern. Then read 5–9 in order: each
-workflow pattern adds one idea to the previous one. Chapters 10–14 are independent; read them when you need them.
+workflow pattern adds one idea to the previous one. Chapters 10–14 are independent; read them when you need them. Read 15–17 after chapter 12.
 
 ---
 
@@ -475,6 +484,119 @@ doubles as a cheap confidence score.
 
 ---
 
+## 15. Embedding RAG with rewriting and reranking — `rag.EmbeddingRagAgent`
+
+**The idea.** Chapter 12 matched words. Real RAG turns text into *embeddings*, vectors where similar meanings sit
+close together, and searches by vector distance. Two extra steps make it work in practice:
+- **Query rewriting.** Users ask chatty questions ("hey, quick one..."), so the model first rewrites the question as
+  a short search query.
+- **Reranking.** Vector search is fast but rough, so fetch a few candidates and let the model score each one against
+  the original question.
+
+**How the sample does it.**
+- `VectorRetriever` uses LangChain4j's own pieces: `DocumentSplitters.recursive(300, 40)` cuts documents into
+  overlapping chunks, each chunk is embedded, and the vectors go into an `InMemoryEmbeddingStore`. Each chunk keeps
+  its document id as `source`, for citations.
+- `ask` rewrites the question, falling back to the question itself if the rewrite comes back blank.
+- It searches for `CANDIDATES` (4) chunks with a score of at least `MIN_VECTOR_SCORE` (0.6).
+- The model rates each chunk from 0 to 10. `parseScore` understands "8/10", "9 out of 10" and scale-first replies
+  such as "On a 0-10 scale: 9".
+- It keeps the best `TOP_K` (2) chunks that score at least `MIN_RERANK_SCORE` (6). If none survive, it says "I don't
+  know" without an answer call.
+- Chunks go into the answer prompt escaped (`PromptText.escape`) and labelled as data, so a document containing
+  `</doc>` can't break out of its fence.
+
+**Watch the score scale.** LangChain4j store scores are *relevance* scores, `(cosine + 1) / 2`. A score of 0.5 means
+unrelated, not "half relevant", so useful thresholds sit above 0.5.
+
+**What to look for.** For each question: the rewritten query, the chunks kept (each with its vector and rerank
+scores), and the answer. The leave question keeps `leave-policy (vector 0.88, rerank 9)`. The football question keeps
+nothing and gets "I don't know".
+
+**Try this.**
+- Compare with chapter 12: ask a question in words the handbook doesn't use. With the placeholder embeddings
+  nothing matches; with a real embedding model it often does.
+- Lower `MIN_RERANK_SCORE` to 3 and watch off-topic chunks reach the answer.
+
+**In production.**
+- Tune the thresholds per embedding model; they don't transfer.
+- Reranking costs one model call per candidate, so dedicated reranker models are often used instead.
+- Swap `InMemoryEmbeddingStore` for a persistent store (pgvector, Qdrant, Chroma); the rest of the code stays.
+
+## 16. Corrective RAG — `rag.CorrectiveRagGraph`
+
+**The idea.** Corrective RAG (Yan et al., 2024) doesn't trust the first search. A grader checks each retrieved chunk.
+If none help, the agent rewrites the query and searches again, and only then answers or admits it doesn't know.
+This catches the common failure where the user's words ("PTO") don't match the documents' words ("leave").
+
+**How the sample does it.**
+- `retrieve` searches for `CANDIDATES` (3) chunks.
+- `grade` asks a yes/no question per chunk; yes/no is easier for a small model than a score. `isYes` needs an
+  explicit "yes", so an unclear reply means "not relevant".
+- `afterGrading` routes to `generate` if any chunk passed, to `rewrite` while fewer than `MAX_REWRITES` (2) rewrites
+  have been made, and to `give_up` otherwise.
+- `rewrite` asks for plainer or more formal words, falling back to the question if the reply is blank.
+
+```
+START → retrieve → grade ─┬─ some relevant ────────→ generate → END
+           ↑              ├─ none, rewrites left ─→ rewrite ─┐
+           └──────────────┼──────────────────────────────────┘
+                          └─ none, no rewrites left → give_up → END
+```
+
+**What to look for.** The step log. "Does my PTO roll forward?" retrieves 0 chunks, is rewritten to "unused paid
+leave days carry over next year", retrieves 3, 1 of which is graded relevant, and is answered with a citation. "What's
+the dress code?" is rewritten twice, never finds anything, and gives up.
+
+**Try this.**
+- Set `MAX_REWRITES` to 0 and compare.
+- Make the grader stricter ("only if it fully answers the question").
+
+**In production.**
+- Grading costs one call per chunk, so grade a few candidates, not dozens.
+- The full CRAG paper also falls back to web search when the documents fail; the `give_up` node is where that would go.
+
+## 17. Long-term memory — `memory.LongTermMemoryAgent`
+
+**The idea.** Chapter 11 remembered within one conversation. *Long-term* memory survives restarts: the agent pulls
+durable facts out of what the user says ("follows a vegetarian diet"), saves them, and in a later session recalls the
+facts that relate to the new message. This is how assistants "remember you".
+
+**How the sample does it.**
+- After each user message, an extraction call returns `FACT: ...` lines. The facts are stored in a `FactStore`, a
+  JSON file of fact texts. Embeddings are recomputed in one batch on load.
+- Each answer recalls up to `RECALL_K` (3) facts whose cosine similarity to the message is at least
+  `MIN_RECALL_SCORE` (0.1). They go into a `<memory>` block, escaped and labelled as data.
+- `FactStore` keeps memory bounded and safe to write: at most `MAX_FACTS` (200) facts of at most `MAX_FACT_CHARS`
+  (200) characters, duplicates removed, the newest kept. Writes go to a temp file that is then moved into place.
+- `main` runs two "sessions" with two separate agent objects over the same file, to show recall after a restart.
+
+**Memory is an attack surface.** Whatever is stored is injected into every later prompt; this is *memory poisoning*
+(OWASP ASI06). So:
+- facts are extracted from the **user's** message only, never from the model's reply;
+- a message that looks like it holds a secret stores **nothing**. The check covers a credential keyword, a card
+  number that passes the Luhn check, and an API-key prefix (`AKIA`, `sk-`, `ghp_`);
+- the user can erase facts with "forget <phrase>", which runs without a model call;
+- the demo keeps its file in a private temp directory, and `AGENT_MEMORY_FILE` keeps memory between runs.
+
+**What to look for.**
+- Session 1 stores two facts, refuses the password message, and forgets "learning Java agents".
+- Session 2 recalls the diet and suggests a vegetarian dinner.
+
+With the placeholder embeddings, recall needs a shared word ("diet"); a real embedding model also links "dinner" to
+"vegetarian".
+
+**Try this.**
+- Run it twice with `AGENT_MEMORY_FILE=/tmp/me.json` and add facts in between.
+- Write a fact that contradicts an old one ("I eat fish now"). Both are kept. Real systems need an *update* step that
+  replaces outdated facts.
+
+**In production.**
+- Decide what may be remembered, for how long, and how users can see and delete it. Memory is personal data.
+- Pattern-based secret detection is a first layer, so keep secrets out of conversations entirely where you can.
+
+---
+
 ## Glossary
 
 | Term | Meaning |
@@ -486,6 +608,8 @@ doubles as a cheap confidence score.
 | **State / node / edge** | A graph's shared data, its steps, and the links that decide which step runs next |
 | **Checkpointer** | Saves graph state after each step, so a run can pause, resume or be inspected |
 | **Embedding** | A vector representing text, where similar texts have nearby vectors |
+| **Reranking** | Re-scoring a few retrieved candidates with a slower, more accurate judge (here, the LLM) |
+| **Memory poisoning** | Planting text in an agent's stored memory so it is injected into later prompts |
 | **Grounding** | Making the model answer from supplied sources instead of from memory |
 | **Prompt injection** | Untrusted text (from a user, a document or a tool) that tries to override the instructions |
 | **Placeholder / fake LLM** | A scripted function returning canned replies, used to run and test samples without a model |
