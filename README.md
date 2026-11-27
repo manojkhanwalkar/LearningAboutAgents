@@ -23,7 +23,9 @@ The unit tests use a fake LLM, so they don't need Ollama. `./mvnw verify` also w
 ## Examples
 
 New to agents? Read [**Agent concepts, one sample at a time**](docs/agent-concepts.md). It explains the idea behind
-each sample, how the code implements it, what to look for when you run it, and what to try next.
+each sample, how the code implements it, what to look for when you run it, and what to try next. Its
+[suggested reading order](docs/agent-concepts.md#suggested-reading-order) groups the chapters into eight stages, from
+"what an agent is" to running agents in production, with a question to check your understanding after each stage.
 
 | Example | What it shows | Run |
 |---|---|---|

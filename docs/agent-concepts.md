@@ -106,8 +106,53 @@ Two LangGraph4j details that trip people up:
 
 ## Suggested reading order
 
-Start with chapters 1–4 to see a model call, tools, a loop and the ReAct pattern. Then read 5–9 in order: each
-workflow pattern adds one idea to the previous one. Chapters 10–14 are independent; read them when you need them. Read 15–17 after chapter 12, 18–20 after chapter 7, 21–24 after chapter 9, 25–28 after chapters 2 and 8, and 29–32 once you are building something real.
+The chapters are numbered by topic, not by difficulty. To build understanding step by step, read them in the stages
+below. Each stage relies on ideas from the one before it and ends with a question you should be able to answer
+before you move on. Run each sample as you read its chapter, then try at least one of its "Try this" changes.
+
+**Stage 1: what an agent is.** Read [1](#1-calling-a-model--chathelloollama) → [2](#2-native-tool-calling--toolstoolcallingagent) → [4](#4-react-reason-act-observe--graphreactagentgraph) → [3](#3-your-first-graph-evaluator-and-optimizer--graphwriterreviewergraph).
+A model call, then a model that calls tools, then the loop made visible (ReAct), then the same loop as a graph with
+state and edges. Chapter 4 before 3 shows the loop as plain text first, so the graph in chapter 3 then reads as
+the same loop, now drawn as a graph.
+*Check:* can you explain why an agent is "an LLM in a loop with tools", and what stops the loop?
+
+**Stage 2: making one call dependable.** Read [10](#10-structured-output--chatstructuredoutputagent) → [13](#13-guardrails--chatguardrailsagent) → [11](#11-conversation-memory--chatconversationmemoryagent) → [12](#12-retrieval-augmented-generation--ragragagent).
+Before building bigger workflows, learn to trust a single step: validate what comes back, check what goes in and
+out, decide what context the model sees, and ground it in documents.
+*Check:* where in a prompt does untrusted text go, and why does code (not the model) validate the reply?
+
+**Stage 3: workflow patterns.** Read [5](#5-prompt-chaining--graphpromptchaininggraph) → [6](#6-routing--graphroutergraph) → [7](#7-orchestrator-and-workers--graphorchestratorworkersgraph) → [8](#8-multi-agent-supervisor--graphsupervisorgraph) → [9](#9-human-in-the-loop--graphhumanapprovalgraph).
+These go from fixed steps (chaining) to steps chosen at run time (routing, orchestrator) to an LLM deciding who
+acts next (supervisor), and end with a person approving the risky step.
+*Check:* for a task you care about, which of these would you pick, and why not a fully autonomous agent?
+
+**Stage 4: reasoning and planning.** Read [14](#14-self-consistency-and-parallel-calls--chatselfconsistencyagent) → [18](#18-plan-and-execute-with-replanning--reasoningplanexecutegraph) → [19](#19-reflexion--reasoningreflexiongraph) → [20](#20-tree-of-thoughts--reasoningtreeofthoughtsagent).
+Sampling several answers, planning ahead, learning from a failed attempt, and searching a tree of options. Each
+spends more model calls to get a better answer.
+*Check:* what does each technique cost in calls, and what kind of problem justifies that cost?
+
+**Stage 5: retrieval and memory in depth.** Read [15](#15-embedding-rag-with-rewriting-and-reranking--ragembeddingragagent) → [16](#16-corrective-rag--ragcorrectiveraggraph) → [17](#17-long-term-memory--memorylongtermmemoryagent).
+Embeddings, query rewriting, reranking, a graph that retries retrieval, and memory that outlives the process.
+*Check:* why is stored memory an attack surface, and how does the sample limit what gets saved?
+
+**Stage 6: more tools and more agents.** Read [25](#25-tools-from-an-mcp-server--toolsmcpmcpagent) → [26](#26-tool-retrieval--toolstoolretrievalagent) → [27](#27-handoffs-between-agents--multiagenthandoffgraph) → [28](#28-debate--multiagentdebategraph).
+Tools from someone else's server, too many tools for one prompt, and agents that pass work to each other or argue.
+Compare chapter 27 with chapter 8 (supervisor).
+*Check:* why are MCP tool descriptions and results treated as untrusted?
+
+**Stage 7: the framework's power tools.** Read [21](#21-parallel-branches--langgraphparallelbranchesgraph) → [22](#22-subgraphs--langgraphsubgraphgraph) → [23](#23-time-travel-with-checkpoints--langgraphtimetravelgraph) → [24](#24-streaming--langgraphstreamingagent).
+LangGraph4j features you reach for once your graphs grow: parallel branches, subgraphs, checkpoints and replay,
+and streaming.
+*Check:* when do branches really run in parallel, and why does chapter 9 already need a checkpointer?
+
+**Stage 8: running agents for real.** Read [29](#29-evaluating-agents--opsevalharness) → [31](#31-observability-and-token-budgets--opsobservedllm) → [30](#30-model-cascade-and-resilience--opsmodelcascade) → [32](#32-semantic-caching--opssemanticcache).
+Measure quality first, then watch cost and latency, then make calls resilient and cheaper. Evaluation comes first
+because every other change needs a way to tell whether it helped.
+*Check:* how would you know that a prompt change made your agent better and not just different?
+
+**Shorter paths.** If you only have an hour, read stages 1 and 3. If you are building a question-answering bot,
+read stage 1, then 10, 12, 13, 15 and 16, then 29. If you are building an autonomous agent with tools, read
+stage 1, then 13, 9, 25, 18 and 31. Keep the [Glossary](#glossary) open as you go.
 
 ---
 
