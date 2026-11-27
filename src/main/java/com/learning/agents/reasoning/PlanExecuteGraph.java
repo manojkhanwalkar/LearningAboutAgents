@@ -12,6 +12,7 @@ import org.bsc.langgraph4j.RunnableConfig;
 import org.bsc.langgraph4j.StateGraph;
 
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.function.Function;
 
@@ -47,9 +48,9 @@ public class PlanExecuteGraph {
     public static CompiledGraph<PlanExecuteState> build(Function<String, String> llm) throws GraphStateException {
         return new StateGraph<>(PlanExecuteState.SCHEMA, PlanExecuteState::new)
                 .addNode("planner", node_async(state -> {
-                    List<String> plan = TextLists.items(llm.apply("""
+                    List<String> plan = TextLists.items(llm.apply(String.format(Locale.ROOT, """
                             You are a planner. Write a short numbered plan (at most %d steps) to reach the goal.
-                            Goal: %s""".formatted(MAX_PLAN_STEPS, tagged(state.goal()))), MAX_PLAN_STEPS);
+                            Goal: %s""", MAX_PLAN_STEPS, tagged(state.goal()))), MAX_PLAN_STEPS);
                     return planUpdate(plan);
                 }))
                 .addNode("executor", node_async(state -> {

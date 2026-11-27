@@ -65,7 +65,7 @@ public class LongTermMemoryAgent {
         var forget = FORGET.matcher(userMessage);
         if (forget.matches()) {
             int removed = memory.forget(forget.group(1));
-            return "Forgot %d fact(s) matching \"%s\".".formatted(removed, forget.group(1));
+            return String.format(Locale.ROOT, "Forgot %d fact(s) matching \"%s\".", removed, forget.group(1));
         }
         List<String> recalled = memory.recall(userMessage, RECALL_K, MIN_RECALL_SCORE);
         String reply = llm.apply("""

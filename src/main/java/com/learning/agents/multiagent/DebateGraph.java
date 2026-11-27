@@ -48,9 +48,9 @@ public class DebateGraph {
     public static CompiledGraph<DebateState> build(Function<String, String> llm) throws GraphStateException {
         return new StateGraph<>(DebateState.SCHEMA, DebateState::new)
                 .addNode("pro", node_async(state -> Map.of(DebateState.TRANSCRIPT,
-                        "PRO (round %d): %s".formatted(state.round() + 1, argue(llm, "FOR", state)))))
+                        String.format(Locale.ROOT, "PRO (round %d): %s", state.round() + 1, argue(llm, "FOR", state)))))
                 .addNode("con", node_async(state -> Map.of(
-                        DebateState.TRANSCRIPT, "CON (round %d): %s".formatted(state.round() + 1, argue(llm, "AGAINST", state)),
+                        DebateState.TRANSCRIPT, String.format(Locale.ROOT, "CON (round %d): %s", state.round() + 1, argue(llm, "AGAINST", state)),
                         DebateState.ROUND, state.round() + 1)))
                 .addNode("judge", node_async(state -> {
                     String verdict = llm.apply("""

@@ -10,6 +10,7 @@ import org.bsc.langgraph4j.RunnableConfig;
 import org.bsc.langgraph4j.StateGraph;
 
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -46,10 +47,10 @@ public class OrchestratorWorkersGraph {
     public static CompiledGraph<OrchestratorState> build(Function<String, String> llm) throws GraphStateException {
         return new StateGraph<>(OrchestratorState.SCHEMA, OrchestratorState::new)
                 .addNode("orchestrator", node_async(state -> {
-                    String plan = llm.apply("""
+                    String plan = llm.apply(String.format(Locale.ROOT, """
                             You are an orchestrator. Break this task into 2 to %d independent subtasks.
                             Reply with one subtask per line and nothing else.
-                            Task: %s""".formatted(MAX_SUBTASKS, state.task()));
+                            Task: %s""", MAX_SUBTASKS, state.task()));
                     return Map.of(OrchestratorState.SUBTASKS, parsePlan(plan), OrchestratorState.NEXT_INDEX, 0);
                 }))
                 .addNode("worker", node_async(state -> {
@@ -95,7 +96,7 @@ public class OrchestratorWorkersGraph {
 
     static String numbered(List<String> subtasks, List<String> results) {
         return IntStream.range(0, Math.min(subtasks.size(), results.size()))
-                .mapToObj(i -> "%d. %s → %s".formatted(i + 1, subtasks.get(i), results.get(i)))
+                .mapToObj(i -> String.format(Locale.ROOT, "%d. %s → %s", i + 1, subtasks.get(i), results.get(i)))
                 .collect(Collectors.joining("\n"));
     }
 

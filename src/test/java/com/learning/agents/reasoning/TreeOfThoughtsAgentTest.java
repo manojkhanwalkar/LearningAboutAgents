@@ -3,8 +3,11 @@ package com.learning.agents.reasoning;
 import com.learning.agents.MainRunner;
 import com.learning.agents.reasoning.TreeOfThoughtsAgent.Node;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -23,6 +26,22 @@ class TreeOfThoughtsAgentTest {
         assertTrue(steps.containsAll(List.of("10 - 4 = 6", "13 - 9 = 4")));
         assertEquals("4 * 6 = 24", steps.getLast());
         assertEquals(3, result.trace().size());
+    }
+
+    /** Steps and trace lines are data (parsed back and asserted), so they must not use the locale's digits. */
+    @ParameterizedTest
+    @ValueSource(strings = {"ar-EG", "fa-IR"})
+    void stepsAndTraceUseAsciiDigitsUnderAnyDefaultLocale(String tag) {
+        Locale saved = Locale.getDefault();
+        try {
+            Locale.setDefault(Locale.forLanguageTag(tag));
+            var result = new TreeOfThoughtsAgent(TreeOfThoughtsAgent.placeholder()).solve(List.of(4, 9, 10, 13));
+
+            assertEquals("4 * 6 = 24", result.solution().orElseThrow().getLast());
+            assertTrue(result.trace().getFirst().startsWith("depth 1: "), result.trace().getFirst());
+        } finally {
+            Locale.setDefault(saved);
+        }
     }
 
     @Test

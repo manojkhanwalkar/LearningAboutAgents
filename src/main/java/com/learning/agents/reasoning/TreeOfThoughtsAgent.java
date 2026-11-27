@@ -49,7 +49,7 @@ public class TreeOfThoughtsAgent {
     record Step(int a, char op, int b, int result) {
         @Override
         public String toString() {
-            return "%d %c %d = %d".formatted(a, op, b, result);
+            return String.format(Locale.ROOT, "%d %c %d = %d", a, op, b, result);
         }
     }
 
@@ -79,7 +79,7 @@ public class TreeOfThoughtsAgent {
             }
             for (Node child : children) {
                 if (child.left().size() == 1 && child.left().getFirst() == TARGET) {
-                    trace.add("depth %d: solved with %s".formatted(depth, child.steps()));
+                    trace.add(String.format(Locale.ROOT, "depth %d: solved with %s", depth, child.steps()));
                     return new Result(Optional.of(child.steps()), trace);
                 }
             }
@@ -96,7 +96,7 @@ public class TreeOfThoughtsAgent {
                     .limit(BEAM_WIDTH)
                     .map(Map.Entry::getKey)
                     .toList();
-            trace.add("depth %d: %d verified step(s), kept %s".formatted(depth, children.size(),
+            trace.add(String.format(Locale.ROOT, "depth %d: %d verified step(s), kept %s", depth, children.size(),
                     beam.stream().map(n -> "[" + n.key() + "] (" + scores.get(n) + ")").toList()));
             if (beam.isEmpty()) {
                 break;
@@ -107,10 +107,10 @@ public class TreeOfThoughtsAgent {
 
     /** Asks for next steps and keeps only those whose arithmetic is right and whose numbers are available. */
     List<Step> propose(Node node) {
-        String reply = llm.apply("""
+        String reply = llm.apply(String.format(Locale.ROOT, """
                 Game of 24. Numbers left: %s
                 Propose up to %d possible next steps, one per line, each combining two of the numbers, like "4 + 9 = 13".
-                Only use + - * / and whole-number results.""".formatted(node.key(), MAX_PROPOSALS));
+                Only use + - * / and whole-number results.""", node.key(), MAX_PROPOSALS));
         return reply.lines()
                 .map(line -> parseStep(line, node.left()))
                 .flatMap(Optional::stream)

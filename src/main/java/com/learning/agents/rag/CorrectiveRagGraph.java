@@ -54,7 +54,7 @@ public class CorrectiveRagGraph {
                 .addNode("retrieve", node_async(state -> {
                     List<Chunk> chunks = retriever.search(state.query(), CANDIDATES, MIN_VECTOR_SCORE);
                     return Map.of(CorrectiveRagState.RETRIEVED, chunks,
-                            CorrectiveRagState.LOG, "retrieve: \"%s\" → %d chunk(s)".formatted(state.query(), chunks.size()));
+                            CorrectiveRagState.LOG, String.format(Locale.ROOT, "retrieve: \"%s\" → %d chunk(s)", state.query(), chunks.size()));
                 }))
                 // Grade every chunk on its own; a yes/no question is much easier for a small model than a score. The
                 // document is fenced and escaped, as in "generate", since this grade decides what reaches the answer.
@@ -67,7 +67,7 @@ public class CorrectiveRagGraph {
                                     Document: <doc>%s</doc>""".formatted(state.question(), PromptText.escape(chunk.text())))))
                             .toList();
                     return Map.of(CorrectiveRagState.RELEVANT, relevant,
-                            CorrectiveRagState.LOG, "grade: %d of %d relevant".formatted(relevant.size(), state.retrieved().size()));
+                            CorrectiveRagState.LOG, String.format(Locale.ROOT, "grade: %d of %d relevant", relevant.size(), state.retrieved().size()));
                 }))
                 .addNode("rewrite", node_async(state -> {
                     String query = llm.apply("""

@@ -6,6 +6,7 @@ import org.slf4j.LoggerFactory;
 import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.List;
+import java.util.Locale;
 import java.util.function.Function;
 import java.util.function.LongSupplier;
 
@@ -93,8 +94,9 @@ public final class ObservedLlm implements Function<String, String> {
         int seq;
         synchronized (this) {
             if (usedTokens + reservation > budgetTokens) {
-                throw new BudgetExceededException("token budget of %d would be exceeded (used %d, this prompt ~%d + up to %d for the reply)"
-                        .formatted(budgetTokens, usedTokens, promptTokens, maxReplyTokens));
+                throw new BudgetExceededException(String.format(Locale.ROOT,
+                        "token budget of %d would be exceeded (used %d, this prompt ~%d + up to %d for the reply)",
+                        budgetTokens, usedTokens, promptTokens, maxReplyTokens));
             }
             usedTokens += (int) reservation;   // reserve now, so concurrent calls can't all pass the check together
             seq = ++calls;

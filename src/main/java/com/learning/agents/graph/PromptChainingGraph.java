@@ -8,6 +8,7 @@ import org.bsc.langgraph4j.GraphStateException;
 import org.bsc.langgraph4j.RunnableConfig;
 import org.bsc.langgraph4j.StateGraph;
 
+import java.util.Locale;
 import java.util.Map;
 import java.util.function.Function;
 import java.util.regex.Pattern;
@@ -45,19 +46,19 @@ public class PromptChainingGraph {
         return new StateGraph<>(PromptChainState.SCHEMA, PromptChainState::new)
                 .addNode("outline", node_async(state -> {
                     // On a retry, say what was wrong; resending the identical prompt tends to get the identical reply.
-                    String feedback = state.outlineAttempts() == 0 ? "" : """
+                    String feedback = state.outlineAttempts() == 0 ? "" : String.format(Locale.ROOT, """
 
-                            Your previous outline had only %d point(s). Give at least %d."""
-                            .formatted(countPoints(state.outline()), MIN_OUTLINE_POINTS);
-                    String outline = llm.apply("""
+                            Your previous outline had only %d point(s). Give at least %d.""",
+                            countPoints(state.outline()), MIN_OUTLINE_POINTS);
+                    String outline = llm.apply(String.format(Locale.ROOT, """
                             Create an outline for a short blog post about "%s".
-                            Reply with %d to 5 bullet points, one per line, each starting with "- ".%s"""
-                            .formatted(state.topic(), MIN_OUTLINE_POINTS, feedback));
+                            Reply with %d to 5 bullet points, one per line, each starting with "- ".%s""",
+                            state.topic(), MIN_OUTLINE_POINTS, feedback));
                     int attempts = state.outlineAttempts() + 1;
                     return Map.of(
                             PromptChainState.OUTLINE, outline,
                             PromptChainState.OUTLINE_ATTEMPTS, attempts,
-                            PromptChainState.LOG, "outline: attempt %d, %d point(s)".formatted(attempts, countPoints(outline)));
+                            PromptChainState.LOG, String.format(Locale.ROOT, "outline: attempt %d, %d point(s)", attempts, countPoints(outline)));
                 }))
                 .addNode("draft", node_async(state -> {
                     String draft = llm.apply("""

@@ -10,6 +10,7 @@ import org.bsc.langgraph4j.StateGraph;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.function.Function;
@@ -61,7 +62,7 @@ public class ReflexionGraph {
                 .addNode("check", node_async(state -> {
                     Optional<String> error = checker.apply(state.answer());
                     return Map.of(ReflexionState.ERROR, error.orElse(""),
-                            ReflexionState.HISTORY, "attempt %d: %s → %s".formatted(
+                            ReflexionState.HISTORY, String.format(Locale.ROOT, "attempt %d: %s → %s", 
                                     state.attempts(), state.answer(), error.map(e -> "FAIL (" + e + ")").orElse("PASS")));
                 }))
                 .addNode("reflect", node_async(state -> Map.of(ReflexionState.LESSONS, llm.apply("""

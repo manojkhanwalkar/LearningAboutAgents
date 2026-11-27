@@ -9,6 +9,7 @@ import org.bsc.langgraph4j.GraphStateException;
 import org.bsc.langgraph4j.RunnableConfig;
 import org.bsc.langgraph4j.StateGraph;
 
+import java.util.Locale;
 import java.util.Map;
 import java.util.function.Function;
 
@@ -57,7 +58,7 @@ public class SubgraphGraph {
                             Outline: %s""".formatted(String.join("\n", state.notes()), state.outline()));
                     var facts = TextLists.items(reply, 2);
                     return Map.of(ReportState.NOTES, facts, ReportState.ROUNDS, state.rounds() + 1,
-                                ReportState.RESEARCH_LOG, "gather round %d: +%d note(s)".formatted(state.rounds() + 1, facts.size()));
+                                ReportState.RESEARCH_LOG, String.format(Locale.ROOT, "gather round %d: +%d note(s)", state.rounds() + 1, facts.size()));
                 }))
                 .addNode("summarize", node_async(state -> Map.of(
                         ReportState.SUMMARY, llm.apply("Summarise these research notes in two sentences:\n"

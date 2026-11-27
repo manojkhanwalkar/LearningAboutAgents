@@ -9,6 +9,7 @@ import dev.langchain4j.exception.RetriableException;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.FutureTask;
@@ -105,7 +106,7 @@ public class ModelCascade {
             Optional<Integer> confidence = confidence(smallReply.get());
             Optional<String> answer = answer(smallReply.get());
             if (answer.isPresent() && confidence.orElse(0) >= MIN_CONFIDENCE) {
-                trace.add("small: confident (%d), done".formatted(confidence.get()));
+                trace.add(String.format(Locale.ROOT, "small: confident (%d), done", confidence.get()));
                 return new Result(answer, "small", trace);
             }
             trace.add("small: not confident enough (%s), escalating".formatted(confidence.map(String::valueOf).orElse("unreadable")));
@@ -141,7 +142,7 @@ public class ModelCascade {
                     return Optional.empty();
                 }
                 Duration wait = backoff(attempt);
-                trace.add("%s: attempt %d failed (%s), retrying in %d ms".formatted(name, attempt, describe(e), wait.toMillis()));
+                trace.add(String.format(Locale.ROOT, "%s: attempt %d failed (%s), retrying in %d ms", name, attempt, describe(e), wait.toMillis()));
                 sleeper.sleep(wait);
             }
         }
