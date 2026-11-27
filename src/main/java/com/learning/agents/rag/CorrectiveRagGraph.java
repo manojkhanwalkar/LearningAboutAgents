@@ -101,6 +101,7 @@ public class CorrectiveRagGraph {
                 .compile();
     }
 
+    /** Routes after grading: answer if any chunk is relevant, else rewrite while rewrites remain, else give up. */
     static String afterGrading(CorrectiveRagState state) {
         if (!state.relevant().isEmpty()) {
             return "generate";

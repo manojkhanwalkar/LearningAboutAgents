@@ -95,6 +95,7 @@ public class LongTermMemoryAgent {
         return memory;
     }
 
+    /** Returns the text of every {@code FACT:} line in the extraction reply, in order; empty for {@code NONE}. */
     static List<String> parseFacts(String reply) {
         List<String> facts = new ArrayList<>();
         var matcher = FACT_LINE.matcher(reply);
