@@ -94,6 +94,15 @@ Same rules as above: placeholder by default, `LLM_BACKEND=ollama` for a real mod
 | `multiagent.HandoffGraph` | **Handoffs (swarm)**: agents pass the conversation directly to each other, with no supervisor, under a handoff limit | `./mvnw exec:java -Dexec.mainClass=com.learning.agents.multiagent.HandoffGraph` |
 | `multiagent.DebateGraph` | **Debate**: pro and con argue for two rounds, then a judge picks a winner (parsed strictly) | `./mvnw exec:java -Dexec.mainClass=com.learning.agents.multiagent.DebateGraph` |
 
+**Production concerns**
+
+| Example | Concept | Run |
+|---|---|---|
+| `ops.EvalHarness` | **Evaluation**: a golden dataset scored by a code check and a strict LLM judge; flags where they disagree; compares two candidates | `./mvnw exec:java -Dexec.mainClass=com.learning.agents.ops.EvalHarness` |
+| `ops.ModelCascade` | **Cascade and resilience**: small model first with self-rated confidence, escalation to a large model, deadlines, full-jitter retries of recoverable errors only, a fallback model | `./mvnw exec:java -Dexec.mainClass=com.learning.agents.ops.ModelCascade` |
+| `ops.ObservabilityDemo` | **Observability and budgets**: the `ObservedLlm` decorator traces latency, sizes and tokens (no content) and a token budget stops a runaway agent | `./mvnw exec:java -Dexec.mainClass=com.learning.agents.ops.ObservabilityDemo` |
+| `ops.SemanticCache` | **Semantic caching**: reuse answers for similar questions (LRU + TTL); shows how a loose threshold returns a wrong answer | `./mvnw exec:java -Dexec.mainClass=com.learning.agents.ops.SemanticCache` |
+
 Running them against your Ollama server, for example on another machine on your network:
 
 ```bash
@@ -112,6 +121,7 @@ gets the fallback reply. Use `LLM_BACKEND=ollama` to try your own prompts.
 | `OLLAMA_MODEL` | `llama3.1` |
 | `LLM_BACKEND` | `placeholder` (the agent-pattern samples only; `ollama` uses the settings above) |
 | `OLLAMA_EMBEDDING_MODEL` | `nomic-embed-text` (embedding samples, with `LLM_BACKEND=ollama`; `ollama pull nomic-embed-text`) |
+| `CASCADE_SMALL_MODEL`, `CASCADE_LARGE_MODEL`, `CASCADE_FALLBACK_MODEL` | `OLLAMA_MODEL` (`ModelCascade` tiers, with `LLM_BACKEND=ollama`) |
 | `AGENT_MEMORY_FILE` | a temporary file (`LongTermMemoryAgent`; set it to keep memory between runs) |
 
 ```bash

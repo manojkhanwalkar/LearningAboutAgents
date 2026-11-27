@@ -2,6 +2,7 @@ package com.learning.agents.ops;
 
 import com.learning.agents.OllamaConfig;
 import com.learning.agents.llm.LlmProvider;
+import com.learning.agents.llm.Replies;
 import com.learning.agents.llm.ScriptedLlm;
 import dev.langchain4j.exception.RetriableException;
 
@@ -47,7 +48,6 @@ public class ModelCascade {
     static final Duration CALL_TIMEOUT = Duration.ofSeconds(60);
 
     private static final Pattern CONFIDENCE = Pattern.compile("CONFIDENCE:\\s*(\\d{1,3})", Pattern.CASE_INSENSITIVE);
-    private static final Pattern ANSWER = Pattern.compile("(?ims)^\\W*ANSWER:[*_\\s]*(.+?)\\s*(?=^\\W*CONFIDENCE:|\\z)");
 
     /** A failure worth retrying, such as an overloaded server. Real clients throw their own retriable exceptions. */
     static final class TransientModelException extends RuntimeException {
@@ -175,9 +175,9 @@ public class ModelCascade {
         return m.find() ? Optional.of(Math.min(100, Integer.parseInt(m.group(1)))) : Optional.empty();
     }
 
+    /** The text on the {@code ANSWER:} line (the confidence goes on its own line, so one line is the answer). */
     static Optional<String> answer(String reply) {
-        var m = ANSWER.matcher(reply);
-        return m.find() ? Optional.of(m.group(1).strip()).filter(a -> !a.isEmpty()) : Optional.empty();
+        return Replies.lineAfter(reply, "ANSWER:");
     }
 
     private static String describe(Throwable e) {
