@@ -574,7 +574,7 @@ object, and *validate* it. When validation fails, send the exact error back and 
   chat answers that wrap code in fences and add a friendly sentence. Long, nested output gives it more chances to
   slip on a quote or a comma.
 - *Constrained decoding.* Ollama's JSON-schema mode masks, at every step, the tokens that would make the output
-  invalid. The output is then always well-formed. It still can't make the *values* right. Forcing the format from
+  invalid. The output is then well-formed, unless the token limit cuts the reply off mid-object. It still can't make the *values* right. Forcing the format from
   the first token can also cut short the model's reasoning, which is why some designs let it think in prose first
   and emit JSON last.
 - *Why strict parsing.* Lenient coercion (`"5"` → 5, 4.9 → 4) hides the fact that the model was confused. Failing
@@ -647,8 +647,9 @@ without retraining.
   than at recall (answering from training). RAG turns a recall problem into a reading problem. Knowledge moves
   from the weights, which are fixed and uncitable, into the prompt, which is fresh and checkable.
 - *What TF-IDF measures.* A word's weight is how often it appears in this document (*term frequency*) times how rare
-  it is across all documents (*inverse document frequency*, a log of total documents over documents containing it).
-  "the" appears everywhere and counts for nothing. "parental" appears in one document and counts for a lot.
+  it is across all documents (*inverse document frequency*). `KeywordRetriever` uses a smoothed form,
+  log(1 + total documents ÷ documents containing the word), so a word found in every document counts almost
+  nothing, while "laptops", found in one handbook document, counts a lot.
 - *Three ways RAG fails.* The right document isn't retrieved, so the model refuses or makes something up. The wrong
   one is retrieved, so the answer is confidently wrong *and comes with a citation*. Or the right document conflicts
   with what the model learned in training, and the model sides with its training. Only the first is visible
@@ -693,8 +694,9 @@ a call. *Output* guardrails inspect the reply before the user sees it.
   *defence in depth*. Output checks are the sturdier layer, because they look at what actually leaves the system,
   however the model was tricked into producing it.
 - *Why normalise first.* Attackers use look-alike Unicode characters and invisible zero-width characters to break up
-  keywords. NFKC normalisation folds look-alikes together and stripping invisible characters rejoins the words, so
-  the patterns see what a human reader sees.
+  keywords. NFKC normalisation folds compatibility look-alikes (fullwidth letters, ligatures) into plain ones, and
+  stripping invisible characters rejoins the words, so the patterns see closer to what a human reader sees.
+  Look-alikes from other scripts, such as Cyrillic "а" for Latin "a", need a separate confusables check.
 - *Two error rates.* Every guardrail blocks some good requests (false positives) and lets some bad ones through
   (false negatives). Tightening one loosens the other. Measure both on real traffic, because a guardrail that blocks
   legitimate users is a bug too.
@@ -882,7 +884,7 @@ facts that relate to the new message. This is how assistants "remember you".
 **Going deeper.**
 - *Three kinds of memory.* Agent research borrows from cognitive science (for example CoALA, Sumers et al., 2023):
   *episodic* memory holds what happened, *semantic* memory holds facts ("is vegetarian"), and *procedural* memory
-  holds how to do things (Reflexion's lessons in chapter 19). This sample keeps semantic memory.
+  holds how to act (in CoALA, the agent's code and the model's weights). This sample keeps semantic memory.
 - *Writing is the hard part.* Deciding what is worth keeping, noticing when a new fact contradicts an old one, and
   letting stale facts expire are all harder than recall. Most memory bugs are write bugs.
 - *Similar is not the same as relevant.* Recall finds facts whose *wording* is close to the message. "What should I
@@ -991,7 +993,7 @@ START → attempt → check ─┬─ passed / attempt limit → END
   lesson from a right one. Then the loop makes things worse with confidence. Reflexion's reported gains are
   largest where tests or environments give real feedback.
 - *Lessons need housekeeping.* They accumulate, they can contradict each other, and they can over-fit one task.
-  Treat them like procedural memory (17): cap them, merge them, and retire ones that stop helping.
+  Treat them like stored memory (17): cap them, merge them, and retire ones that stop helping.
 
 **What to look for.**
 - Attempt 1 includes 15 ("15 is not prime").
@@ -1479,7 +1481,7 @@ disagreement is "Twelve", which is right but phrased differently.
   saving, plus the small model's latency on every question. The escalation rate decides whether a cascade pays.
 - *Self-rated confidence is a weak signal.* Models are poorly calibrated about their own correctness and often
   report high confidence on wrong answers. Stronger escalation signals are agreement between samples (14), a
-  verifier (3), or the token probabilities, where the server exposes them.
+  checker in code (19, 20) or a separate judge (16), or the token probabilities, where the server exposes them.
 - *Retry layers multiply.* Two layers of 3 attempts make up to 9 calls per failure, and three layers make 27. Retries
   without jitter all fire at once and knock an overloaded server down again (*retry storm*). One layer, full jitter
   and a total deadline keep retries from making an outage worse.
