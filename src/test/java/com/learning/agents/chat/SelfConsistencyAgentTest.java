@@ -52,6 +52,40 @@ class SelfConsistencyAgentTest {
     }
 
     @Test
+    void interruptingTheCallerCancelsTheSamplesInsteadOfWaitingForThem() throws Exception {
+        // Ctrl-C (an interrupt) while waiting must stop the samples, not wait for every model call to finish.
+        var started = new java.util.concurrent.CountDownLatch(3);
+        var never = new java.util.concurrent.CountDownLatch(1);
+        var outcome = new java.util.concurrent.atomic.AtomicReference<Throwable>();
+        Thread caller = Thread.ofVirtual().start(() -> {
+            try {
+                SelfConsistencyAgent.solve(prompt -> {
+                    started.countDown();
+                    try {
+                        never.await();   // a model call that only an interrupt ends
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        throw new IllegalStateException("cancelled", e);
+                    }
+                    return "ANSWER: 4";
+                }, "q", 3, java.time.Duration.ofMinutes(5));
+            } catch (Throwable t) {
+                outcome.set(t);
+            }
+        });
+        assertTrue(started.await(5, java.util.concurrent.TimeUnit.SECONDS));
+
+        try {
+            caller.interrupt();
+
+            assertTrue(caller.join(java.time.Duration.ofSeconds(5)), "solve must return promptly once interrupted");
+            assertTrue(outcome.get() instanceof InterruptedException, "the interrupt is reported: " + outcome.get());
+        } finally {
+            never.countDown();   // never leave the samples blocked, even if the assertions fail
+        }
+    }
+
+    @Test
     void noUsableAnswersGivesEmpty() throws Exception {
         assertEquals(Optional.empty(), SelfConsistencyAgent.solve(prompt -> "I refuse", "q", 3));
         assertEquals(0, new SelfConsistencyAgent.Vote("x", 0, 0).agreement());
