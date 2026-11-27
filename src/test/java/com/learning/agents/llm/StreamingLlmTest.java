@@ -80,7 +80,7 @@ class StreamingLlmTest {
             handler.onPartialResponse(new dev.langchain4j.model.chat.response.PartialResponse("early "), context);
             try {
                 keepGoing.await();   // stall past the timeout, then keep "generating"
-            } catch (InterruptedException e) {
+            } catch (InterruptedException _) {
                 Thread.currentThread().interrupt();
             }
             handler.onPartialResponse(new dev.langchain4j.model.chat.response.PartialResponse("late"), context);
@@ -118,7 +118,7 @@ class StreamingLlmTest {
                     });
             try {
                 timedOut.await();   // the first token arrives only after the caller has given up
-            } catch (InterruptedException e) {
+            } catch (InterruptedException _) {
                 Thread.currentThread().interrupt();
             }
             handler.onPartialResponse(new dev.langchain4j.model.chat.response.PartialResponse("late"), context);

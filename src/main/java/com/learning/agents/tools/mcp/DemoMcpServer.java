@@ -92,7 +92,7 @@ public final class DemoMcpServer implements AutoCloseable {
             JsonNode request;
             try {
                 request = JSON.readTree(body);
-            } catch (IOException e) {
+            } catch (IOException _) {
                 send(exchange, 400, error(null, -32700, "parse error"));
                 return;
             }

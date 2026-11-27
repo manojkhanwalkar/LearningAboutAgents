@@ -189,7 +189,7 @@ public final class FactStore {
         }
         try {
             Files.deleteIfExists(tmp);
-        } catch (IOException ignored) {
+        } catch (IOException _) {
             // Best effort: the write already failed, and that is the error the caller needs to see.
         }
     }

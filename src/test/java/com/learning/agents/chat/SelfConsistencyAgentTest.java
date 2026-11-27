@@ -39,7 +39,7 @@ class SelfConsistencyAgentTest {
             if (n == 1) {
                 try {
                     Thread.sleep(10_000);
-                } catch (InterruptedException e) {
+                } catch (InterruptedException _) {
                     Thread.currentThread().interrupt();
                 }
                 return "ANSWER: late";
