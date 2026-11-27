@@ -68,6 +68,14 @@ Same rules as above: placeholder by default, `LLM_BACKEND=ollama` for a real mod
 | `rag.CorrectiveRagGraph` | **Corrective RAG**: an LLM grades retrieved chunks, and if none help, rewrites the query and searches again before answering or giving up | `./mvnw exec:java -Dexec.mainClass=com.learning.agents.rag.CorrectiveRagGraph` |
 | `memory.LongTermMemoryAgent` | **Long-term memory**: facts extracted from user messages are saved to a JSON file and recalled by similarity in a later session, with secret filtering and `forget` | `./mvnw exec:java -Dexec.mainClass=com.learning.agents.memory.LongTermMemoryAgent` |
 
+**Reasoning and planning**
+
+| Example | Concept | Run |
+|---|---|---|
+| `reasoning.PlanExecuteGraph` | **Plan-and-execute with replanning**: plan, do one step, then rewrite the remaining plan from what was learned (or finish with `FINAL:`) | `./mvnw exec:java -Dexec.mainClass=com.learning.agents.reasoning.PlanExecuteGraph` |
+| `reasoning.ReflexionGraph` | **Reflexion**: a code checker grades each attempt, the model writes a lesson after each failure, and all lessons feed the next attempt | `./mvnw exec:java -Dexec.mainClass=com.learning.agents.reasoning.ReflexionGraph` |
+| `reasoning.TreeOfThoughtsAgent` | **Tree of Thoughts**: beam search on the Game of 24; the model proposes and rates steps, code verifies the arithmetic | `./mvnw exec:java -Dexec.mainClass=com.learning.agents.reasoning.TreeOfThoughtsAgent` |
+
 Running them against your Ollama server, for example on another machine on your network:
 
 ```bash
