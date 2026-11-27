@@ -34,11 +34,12 @@ check its own work. An *agent* is ordinary code wrapped around that function. Th
 prompt, what to do with the reply, and whether to call the model again. Every sample is a different answer to those
 three questions.
 
-**The LLM is just a `Function<String, String>`.** Apart from the first two samples, every sample takes its model as
-a plain function: prompt in, reply out. This has two benefits:
+**The LLM is just a `Function<String, String>`.** Apart from chapters 1–4, every sample takes its model as a plain
+function, prompt in and reply out, and its `main` gets that function through `LlmProvider`. This has two benefits:
 
 - *Tests and placeholders.* A lambda can stand in for the model, so every sample has unit tests and runs without a
-  server. Each sample ships a `placeholder()`: a `ScriptedLlm` with canned replies keyed to its own prompts.
+  server. Each sample ships a `placeholder()`: usually a `ScriptedLlm` with canned replies keyed to its own prompts.
+  `SelfConsistencyAgent` uses a plain function instead, because its replies must vary between calls.
 - *Swapping models is configuration.* `LlmProvider.resolve(placeholder())` returns the placeholder unless
   `LLM_BACKEND=ollama` is set. In that case it returns a real Ollama model, picked by `OLLAMA_BASE_URL` and
   `OLLAMA_MODEL`. None of these samples need native tool calling, so small open models such as Gemma work.
@@ -70,7 +71,7 @@ take a `Function` in `build(...)`, so their tests run on fakes.
 - **Routing decisions are code**, not model output taken on trust. The model's reply is parsed and checked against
   the allowed choices, and anything unexpected takes a safe default.
 
-Two LangGraph4j details that trip people up, both covered in `AGENTS.md`:
+Two LangGraph4j details that trip people up:
 - `Channels.appender` silently drops a value that is already in the list, so keys that may repeat use
   `appenderWithDuplicate`.
 - Every value stored in state must be `Serializable`.
@@ -113,8 +114,9 @@ generates an implementation of the `MathAssistant` interface. It sends the syste
 runs any tool calls the model asks for, feeds the results back, and repeats until the model gives a text answer.
 `MessageWindowChatMemory.withMaxMessages(20)` keeps the last 20 messages as conversation memory.
 
-**What to look for.** The answer to "square root of (12.5 × 8) plus 4" should be 14. The tool calls happen inside
-LangChain4j; turn on `logRequests(true)` in `OllamaConfig` to see them.
+**What to look for.** The answer to "square root of (12.5 × 8) plus 4" should be 14. `Calculator` prints a
+`[tool] ...` line each time the model calls a tool. Turn on `logRequests(true)` in `OllamaConfig` to see the raw
+model traffic as well.
 
 **Try this.**
 - Add a `@Tool` for powers and ask "what is 2 to the 10th?".
