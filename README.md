@@ -76,6 +76,24 @@ Same rules as above: placeholder by default, `LLM_BACKEND=ollama` for a real mod
 | `reasoning.ReflexionGraph` | **Reflexion**: a code checker grades each attempt, the model writes a lesson after each failure, and all lessons feed the next attempt | `./mvnw exec:java -Dexec.mainClass=com.learning.agents.reasoning.ReflexionGraph` |
 | `reasoning.TreeOfThoughtsAgent` | **Tree of Thoughts**: beam search on the Game of 24; the model proposes and rates steps, code verifies the arithmetic | `./mvnw exec:java -Dexec.mainClass=com.learning.agents.reasoning.TreeOfThoughtsAgent` |
 
+**LangGraph4j features**
+
+| Example | Concept | Run |
+|---|---|---|
+| `langgraph.ParallelBranchesGraph` | **Parallel branches**: fan-out to three analysts and fan-in to a judge; shows that branches only overlap with `addParallelNodeExecutor` | `./mvnw exec:java -Dexec.mainClass=com.learning.agents.langgraph.ParallelBranchesGraph` |
+| `langgraph.SubgraphGraph` | **Subgraphs**: a compiled research graph (with its own loop) used as one node of a report graph | `./mvnw exec:java -Dexec.mainClass=com.learning.agents.langgraph.SubgraphGraph` |
+| `langgraph.TimeTravelGraph` | **Time travel**: checkpoint history, replay from a past step, and fork with changed state | `./mvnw exec:java -Dexec.mainClass=com.learning.agents.langgraph.TimeTravelGraph` |
+| `langgraph.StreamingAgent` | **Streaming**: node events with `graph.stream(...)` and token-by-token output (`OllamaStreamingChatModel` with Ollama) | `./mvnw exec:java -Dexec.mainClass=com.learning.agents.langgraph.StreamingAgent` |
+
+**Tools and multi-agent**
+
+| Example | Concept | Run |
+|---|---|---|
+| `tools.mcp.McpAgent` | **MCP tools**: lists and calls tools on an MCP server (a tiny in-process one over real Streamable HTTP), with an allow-list and fenced, size-capped results | `./mvnw exec:java -Dexec.mainClass=com.learning.agents.tools.mcp.McpAgent` |
+| `tools.ToolRetrievalAgent` | **Tool retrieval**: embeds a 12-tool catalog and shows the model only the 3 most relevant tools per question | `./mvnw exec:java -Dexec.mainClass=com.learning.agents.tools.ToolRetrievalAgent` |
+| `multiagent.HandoffGraph` | **Handoffs (swarm)**: agents pass the conversation directly to each other, with no supervisor, under a handoff limit | `./mvnw exec:java -Dexec.mainClass=com.learning.agents.multiagent.HandoffGraph` |
+| `multiagent.DebateGraph` | **Debate**: pro and con argue for two rounds, then a judge picks a winner (parsed strictly) | `./mvnw exec:java -Dexec.mainClass=com.learning.agents.multiagent.DebateGraph` |
+
 Running them against your Ollama server, for example on another machine on your network:
 
 ```bash

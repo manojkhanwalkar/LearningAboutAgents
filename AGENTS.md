@@ -56,11 +56,13 @@ src/main/java/com/learning/agents/
   OllamaConfig.java          # the single place that builds Ollama models
   llm/                       # LlmProvider, ScriptedLlm, HashingEmbeddingModel, PromptText (escaping), TextLists (list parsing)
   chat/                      # prompt -> reply patterns: memory, structured output, guardrails, voting
-  tools/                     # LangChain4j AI Services + @Tool examples
+  tools/                     # LangChain4j AI Services + @Tool examples, tool retrieval; tools/mcp/ MCP client + demo server
   graph/                     # LangGraph4j StateGraph workflows
   rag/                       # retrieval-augmented generation (keyword, embedding and corrective RAG)
   memory/                    # long-term memory that persists across sessions
   reasoning/                 # plan-and-execute, Reflexion, Tree of Thoughts
+  langgraph/                 # LangGraph4j features: parallel branches, subgraphs, time travel, streaming
+  multiagent/                # handoffs (swarm) and debate
 src/test/java/...            # tests mirror main packages
 .claude/skills/              # Claude Code skills (e.g. new-agent-example scaffolds a new sample)
 ```
@@ -73,6 +75,22 @@ src/test/java/...            # tests mirror main packages
 - New samples take their LLM as a `Function<String, String>`, provide a `static ScriptedLlm placeholder()` with canned
   replies, and get it in `main` through `LlmProvider.resolve(placeholder())`, so they run without Ollama by default.
   A placeholder that must vary between calls (e.g. `SelfConsistencyAgent`'s noisy voter) may return a plain thread-safe `Function`.
+- Invoke graphs with `graph.invoke(GraphInput.args(map), RunnableConfig.builder().build())` (and `stream(GraphInput, config)`);
+  every `Map`-taking `invoke`/`stream` overload is deprecated for removal.
+- Parallel branches run one after another unless the fan-out node has an executor
+  (`RunnableConfig.builder().addParallelNodeExecutor(node, executor)`).
+- Add subgraphs uncompiled, `addNode(id, stateGraph)`, which inlines them. A compiled subgraph's whole final state
+  is merged back into the parent, so lists the parent filled before it would be appended twice.
+- To fork from a checkpoint, copy it (`Checkpoint.copyOf(...).updateState(...)`, then `saver.put(threadConfig, copy)`):
+  `updateState` with a checkpoint id rewrites that checkpoint in place.
+- Checkpoint history (`getStateHistory`) needs `CompileConfig.builder().releaseThread(false)`.
+- Treat MCP servers as untrusted: pin the description of each allowed tool (never show the server's), fence and
+  escape results, cap result size. `DefaultMcpClient.executeTool` throws `McpApplicationErrorException` when a tool
+  reports an error; catch it and give the error to the model. `langchain4j-mcp` is a beta artifact; on JDK 26 it
+  warns about reflective final-field mutation, which a future JDK may turn into an error.
+- Parse labelled replies (`ANSWER:`, `FINAL:`, `HANDOFF:`) with `llm.Replies`, not a `(?m)^\W*LABEL:` regex, which is
+  quadratic on long replies.
+- Format numbers that leave the program (protocol output, tool results, tested strings) with `Locale.ROOT`.
 - Values kept in graph state must be `Serializable` (records of strings and numbers are fine): LangGraph4j copies
   state between nodes with Java serialization and fails at run time on anything else.
 - Accumulating graph-state keys whose entries can legitimately repeat (worker results, agent scratchpads) use

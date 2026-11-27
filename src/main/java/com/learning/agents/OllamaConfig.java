@@ -2,6 +2,7 @@ package com.learning.agents;
 
 import dev.langchain4j.model.ollama.OllamaChatModel;
 import dev.langchain4j.model.ollama.OllamaEmbeddingModel;
+import dev.langchain4j.model.ollama.OllamaStreamingChatModel;
 
 import java.time.Duration;
 
@@ -58,6 +59,16 @@ public final class OllamaConfig {
                 .timeout(Duration.ofMinutes(2))
                 .logRequests(false)
                 .logResponses(false)
+                .build();
+    }
+
+    /** A streaming chat model with the same settings as {@link #chatModel()}, for samples that print tokens as they arrive. */
+    public static OllamaStreamingChatModel streamingChatModel() {
+        return OllamaStreamingChatModel.builder()
+                .baseUrl(baseUrl())
+                .modelName(modelName())
+                .temperature(0.2)
+                .timeout(Duration.ofMinutes(2))
                 .build();
     }
 

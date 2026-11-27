@@ -71,6 +71,12 @@
             <artifactId>langchain4j-ollama</artifactId>
         </dependency>
 
+        <!-- MCP client (Model Context Protocol), for the MCP sample; version managed by the LangChain4j BOM -->
+        <dependency>
+            <groupId>dev.langchain4j</groupId>
+            <artifactId>langchain4j-mcp</artifactId>
+        </dependency>
+
         <!-- LangGraph4j: stateful, graph-based agent workflows -->
         <dependency>
             <groupId>org.bsc.langgraph4j</groupId>

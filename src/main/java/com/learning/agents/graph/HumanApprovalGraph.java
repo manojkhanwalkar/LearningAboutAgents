@@ -84,7 +84,7 @@ public class HumanApprovalGraph {
         // Each conversation gets its own thread id, so its checkpoints are kept apart from other runs.
         var config = RunnableConfig.builder().threadId(UUID.randomUUID().toString()).build();
 
-        ApprovalState paused = graph.invoke(Map.of(ApprovalState.REQUEST, request), config).orElseThrow();
+        ApprovalState paused = graph.invoke(GraphInput.args(Map.of(ApprovalState.REQUEST, request)), config).orElseThrow();
         boolean approved = reviewer.test(paused.proposal());
 
         var resumeConfig = graph.updateState(config, Map.of(ApprovalState.APPROVED, approved));
