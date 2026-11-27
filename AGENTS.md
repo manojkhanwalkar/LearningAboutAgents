@@ -43,6 +43,7 @@ Read from environment variables in `com.learning.agents.OllamaConfig`:
 | `OLLAMA_BASE_URL` | `http://localhost:11434` |
 | `OLLAMA_MODEL` | `llama3.1` |
 | `LLM_BACKEND` | `placeholder`, read by `com.learning.agents.llm.LlmProvider`; `ollama` switches the agent-pattern samples to a real model |
+| `OLLAMA_EMBEDDING_MODEL` | `nomic-embed-text`, used by `OllamaConfig.embeddingModel()` |
 
 `tools.ToolCallingAgent` needs a model that supports native **tool calling** (e.g. `llama3.1`, `qwen3`, `mistral`).
 The other samples, including all graphs, use plain-text prompts and work with any instruction-following model (e.g. `gemma3`).
@@ -53,11 +54,12 @@ Check that the server is up with `curl localhost:11434/api/tags`.
 ```
 src/main/java/com/learning/agents/
   OllamaConfig.java          # the single place that builds Ollama models
-  llm/                       # LlmProvider (placeholder vs Ollama) and ScriptedLlm (canned replies)
+  llm/                       # LlmProvider (placeholder vs Ollama), ScriptedLlm (canned replies), HashingEmbeddingModel
   chat/                      # prompt -> reply patterns: memory, structured output, guardrails, voting
   tools/                     # LangChain4j AI Services + @Tool examples
   graph/                     # LangGraph4j StateGraph workflows
-  rag/                       # retrieval-augmented generation (KeywordRetriever + RagAgent)
+  rag/                       # retrieval-augmented generation (keyword, embedding and corrective RAG)
+  memory/                    # long-term memory that persists across sessions
 src/test/java/...            # tests mirror main packages
 .claude/skills/              # Claude Code skills (e.g. new-agent-example scaffolds a new sample)
 ```
@@ -65,9 +67,13 @@ src/test/java/...            # tests mirror main packages
 ## Conventions
 
 - Create models through `OllamaConfig`. Do not hard-code URLs or model names in examples.
+- Samples that embed text take a LangChain4j `EmbeddingModel` and get it through
+  `LlmProvider.resolveEmbeddings(new HashingEmbeddingModel())`. Embedding-store scores are `(cosine + 1) / 2`, so 0.5 means unrelated.
 - New samples take their LLM as a `Function<String, String>`, provide a `static ScriptedLlm placeholder()` with canned
   replies, and get it in `main` through `LlmProvider.resolve(placeholder())`, so they run without Ollama by default.
   A placeholder that must vary between calls (e.g. `SelfConsistencyAgent`'s noisy voter) may return a plain thread-safe `Function`.
+- Values kept in graph state must be `Serializable` (records of strings and numbers are fine): LangGraph4j copies
+  state between nodes with Java serialization and fails at run time on anything else.
 - Accumulating graph-state keys whose entries can legitimately repeat (worker results, agent scratchpads) use
   `Channels.appenderWithDuplicate`; plain `Channels.appender` silently drops a value already in the list.
 - Each example is a self-contained class with a `main` method that accepts an optional prompt via `args`.
