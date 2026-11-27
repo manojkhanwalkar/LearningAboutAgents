@@ -42,9 +42,18 @@ public final class OllamaConfig {
 
     /** A chat model like {@link #chatModel()} but for a named model, for samples that use more than one. */
     public static OllamaChatModel chatModel(String modelName) {
+        return chatModel(modelName, null);
+    }
+
+    /**
+     * A chat model for a named model with its own retry count. Pass {@code 0} when the caller retries itself, so a
+     * failing call isn't retried by two layers at once; {@code null} keeps LangChain4j's default.
+     */
+    public static OllamaChatModel chatModel(String modelName, Integer maxRetries) {
         return OllamaChatModel.builder()
                 .baseUrl(baseUrl())
                 .modelName(modelName)
+                .maxRetries(maxRetries)
                 .temperature(0.2)
                 .timeout(Duration.ofMinutes(2))
                 .logRequests(false)

@@ -39,6 +39,15 @@ public final class LlmProvider {
     }
 
     /**
+     * Like {@link #resolve(Function)}, but with a custom Ollama factory, for samples that use several models (for
+     * example a small and a large one, each from its own environment variable).
+     */
+    public static Function<String, String> resolve(Function<String, String> placeholder,
+                                                   Supplier<Function<String, String>> ollama) {
+        return resolve(System.getenv(ENV), placeholder, ollama);
+    }
+
+    /**
      * Returns the embedding model for the backend named by {@value #ENV}: {@code placeholder} (usually a
      * {@link HashingEmbeddingModel}), or {@link OllamaConfig#embeddingModel()} when it is {@code ollama}.
      */
