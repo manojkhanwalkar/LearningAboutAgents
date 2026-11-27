@@ -168,7 +168,7 @@ repeats until the model writes a **Final Answer**. It works with any instruction
 - The `reason` node sends the question, the tool list and the whole transcript so far.
 - The reply is parsed with regexes for `Thought:`, `Action: tool[input]` and `Final Answer:`.
 - The `act` node looks up the tool in `ReActTools` and appends `Observation: <result>`. The tools are `lookup` (a
-  small fact table) and `calculate` (exact decimal arithmetic).
+  small fact table) and `calculate` (one `+ - * /` operation in `BigDecimal`; division is rounded).
 - Two defences against real model behaviour:
   - `truncateAtObservation` discards any Observation the model invents for itself.
   - An unparseable reply produces an "Invalid action..." observation that tells the model the format again.
@@ -180,8 +180,9 @@ START → reason ─┬─ Final Answer / step limit → END
            └──── Observation ──┘
 ```
 
-**What to look for.** The printed transcript is exactly what the model saw on each step. This is the best place in
-the repository to build an intuition for how agents "think".
+**What to look for.** The printed transcript is the Thought/Action/Observation part of what the model saw on each
+step; the prompt adds the instructions, the tool list and the question above it. This is the best place in the
+repository to build an intuition for how agents "think".
 
 **Try this.**
 - Add a tool, such as a unit converter, to `ReActTools.defaults()` and ask a question that needs it.
@@ -201,8 +202,8 @@ outline → draft → polish. Small prompts are easier for a model to follow tha
 
 **How the sample does it.**
 - The `outline` node asks for 3–5 bullet points.
-- The conditional edge `gate(state)` counts list items in code with `countPoints`, which accepts `-`, `*`, `•` and
-  `1.`.
+- The conditional edge `gate(state)` counts list items in code with `countPoints`, which accepts `-`, `*`, `•`, `1.`
+  and `1)`.
 - With 3 or more points, the graph continues to `draft` and then `polish`. Otherwise it retries the outline, and the
   retry prompt says what was wrong ("only 1 point(s)"). After `MAX_OUTLINE_ATTEMPTS` (2) it gives up instead of
   drafting from a bad outline.
@@ -217,7 +218,9 @@ START → outline → gate ─┬─ valid → draft → polish → END
 **What to look for.** The log lines `outline: attempt 1, 3 point(s)`, `draft: written`, `polish: done`.
 
 **Try this.**
-- Make the placeholder's first outline a single line and watch the retry with feedback.
+- Make the placeholder return a single-line outline on the first call and a good one on the second (for example with
+  an `AtomicInteger`), and watch the retry with feedback. A placeholder that always returns a bad outline shows the
+  give-up path instead.
 - Add a `fact_check` step between `draft` and `polish`.
 
 **In production.**
@@ -245,7 +248,9 @@ START → classify ─┼─ technical ┼→ END
 **What to look for.** Three demo queries, each printed with its route and its answer.
 
 **Try this.**
-- Add a `sales` route: one map entry, and both the graph and the classifier prompt pick it up.
+- Add a `sales` route. It needs three edits: a `SPECIALISTS` entry (which adds the node and teaches `normalizeRoute`
+  the label), the category list in the classifier prompt, and the conditional-edge map. A good refactor is to build
+  the last two from `SPECIALISTS.keySet()`, so one entry is enough.
 - Route by cost instead: easy questions to a small model, hard ones to a big one.
 
 **In production.**
@@ -300,7 +305,8 @@ count (4) and the answer, which is the writer's latest draft.
 
 **Try this.**
 - Add a `fact_checker` agent: one list entry.
-- Make the critic always object and watch `MAX_TURNS` end the run.
+- Make the supervisor never say `FINISH`: the placeholder finishes as soon as the critic has spoken, so change the
+  supervisor rules, not just the critic. Then watch `MAX_TURNS` end the run.
 
 **In production.**
 - Multi-agent systems are expensive and hard to debug. Use them when the roles really need different instructions
@@ -349,7 +355,8 @@ object, and *validate* it. When validation fails, send the exact error back and 
 
 **How the sample does it.**
 - The prompt gives the schema for `ReviewSummary(product, rating 1–5, sentiment)`.
-- `stripFences` removes the Markdown fences models love to add.
+- `stripFences` keeps only the outermost `{...}`, which drops the Markdown fences models love to add and any prose
+  around the JSON.
 - `parse` uses a strict Jackson mapper (no float-to-int, no string-to-number coercion), so `4.9` or `"5"` fails
   instead of slipping through, and then checks each field's range.
 - On failure, the repair prompt repeats the **whole task**: the model is stateless, so without the original review
@@ -373,8 +380,8 @@ conversation eventually overflows the context window. So keep the recent turns w
 into a running summary.
 
 **How the sample does it.**
-- The last `RECENT_TURNS` (4) messages are kept verbatim.
-- When there are more, the two oldest are folded into the summary by an LLM call ("keep every fact the user
+- Up to `RECENT_TURNS` (4) recent messages are kept verbatim.
+- When a fifth arrives, the two oldest are folded into the summary by an LLM call ("keep every fact the user
   stated"), and the summary is capped in code at `MAX_SUMMARY_CHARS` (600).
 - Each prompt is: instructions, summary, recent turns, then the new message.
 
@@ -408,8 +415,10 @@ question retrieves nothing and is refused.
 
 **Try this.**
 - Add a document and ask about it.
-- Ask "How much holiday do I get?". Keyword search misses synonyms ("holiday" vs "leave"), which is why real systems
-  use embeddings.
+- Ask "How much vacation am I entitled to?". It shares no words with the handbook, so nothing is retrieved, even
+  though the leave policy answers it. Keyword search misses synonyms ("vacation" vs "leave"), which is why real
+  systems use embeddings. Stop words matter too: "How much holiday do I get?" *does* retrieve the leave policy,
+  but only because "get" isn't a stop word and also appears in it.
 
 **In production.**
 - Retrieval quality limits answer quality.
@@ -430,7 +439,7 @@ a call. *Output* guardrails inspect the reply before the user sees it.
   containing the system prompt's marker is blocked.
 
 **What to look for.** Four requests: allowed, allowed with redactions, blocked as an injection, blocked as a topic.
-Each shows the rules that fired.
+Each request after the first shows the rules that fired.
 
 **Try this.**
 - Find a rephrasing that gets past the injection patterns. You will, which is the point of the next paragraph.
@@ -449,7 +458,7 @@ doubles as a cheap confidence score.
 **How the sample does it.**
 - `SAMPLES` (5) calls run concurrently on virtual threads, one per call, which suits calls that spend their time
   waiting on the network.
-- Each reply's last `ANSWER:` line is normalised (Markdown stripped, case folded, trailing punctuation removed), and
+- Each reply's last `ANSWER:` line is normalised (`*`, `_` and backticks stripped, case folded, a trailing `.` or `!` removed), and
   `vote` picks the most common answer, breaking ties alphabetically.
 - A deadline (`SAMPLE_TIMEOUT`, 3 minutes for all samples together) bounds the wait. A sample that fails or is late
   is cancelled and *abstains* instead of sinking the whole vote.
