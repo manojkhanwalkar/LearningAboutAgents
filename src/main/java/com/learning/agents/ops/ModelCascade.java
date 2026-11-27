@@ -11,7 +11,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Executors;
+import java.util.concurrent.FutureTask;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -29,7 +30,7 @@ import java.util.regex.Pattern;
  * <b>Resilience.</b> Every call gets a deadline ({@link #CALL_TIMEOUT} by default). A failure is retried only if
  * it is <em>recoverable</em>: a timeout, a LangChain4j {@link RetriableException} (server error, rate limit) or a
  * {@link TransientModelException}. Retries wait with exponential backoff and <em>full jitter</em>: a random wait
- * between 0 and min({@link #MAX_DELAY}, {@link #BASE_DELAY} × 2^attempt), so many clients don't retry in lock-step.
+ * between 0 and min({@link #MAX_DELAY}, {@link #BASE_DELAY} × 2^(attempt−1)), so many clients don't retry in lock-step.
  * A bad request is never retried. If the large model still fails after {@link #MAX_ATTEMPTS}, a fallback model
  * answers. There is exactly one retry layer: the Ollama models are built with {@code maxRetries(0)}.
  *
@@ -47,7 +48,15 @@ public class ModelCascade {
     static final Duration MAX_DELAY = Duration.ofSeconds(2);
     static final Duration CALL_TIMEOUT = Duration.ofSeconds(60);
 
-    private static final Pattern CONFIDENCE = Pattern.compile("CONFIDENCE:\\s*(\\d{1,3})", Pattern.CASE_INSENSITIVE);
+    private static final Pattern LEADING_NUMBER = Pattern.compile("^(\\d{1,3})");
+
+    /** A thread-safe random source: each call draws from the calling thread's own generator. */
+    static final RandomGenerator THREAD_SAFE_RANDOM = new RandomGenerator() {
+        @Override
+        public long nextLong() {
+            return ThreadLocalRandom.current().nextLong();
+        }
+    };
 
     /** A failure worth retrying, such as an overloaded server. Real clients throw their own retriable exceptions. */
     static final class TransientModelException extends RuntimeException {
@@ -139,18 +148,25 @@ public class ModelCascade {
         return Optional.empty();   // not reached: the loop always returns
     }
 
-    /** Runs the call on a virtual thread and gives up after the deadline, cancelling the call. */
+    /**
+     * Runs the call on its own virtual thread and stops <em>waiting</em> at the deadline, interrupting the call. A call
+     * that ignores interrupts may keep running in the background, but the caller is never held past the deadline.
+     * (Closing an executor in try-with-resources would wait for that call to finish, which defeats the deadline.)
+     */
     private String callWithTimeout(Function<String, String> model, String prompt) throws TimeoutException, InterruptedException {
-        try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-            var future = executor.submit(() -> model.apply(prompt));
-            try {
-                return future.get(callTimeout.toMillis(), TimeUnit.MILLISECONDS);
-            } catch (TimeoutException e) {
-                future.cancel(true);
-                throw e;
-            } catch (ExecutionException e) {
-                throw e.getCause() instanceof RuntimeException re ? re : new IllegalStateException(e.getCause());
+        var task = new FutureTask<>(() -> model.apply(prompt));
+        Thread.ofVirtual().name("model-call").start(task);
+        try {
+            return task.get(callTimeout.toMillis(), TimeUnit.MILLISECONDS);
+        } catch (TimeoutException | InterruptedException e) {
+            task.cancel(true);   // on our own interrupt too, so Ctrl-C doesn't wait for the model
+            throw e;
+        } catch (ExecutionException e) {
+            Throwable cause = e.getCause();
+            if (cause instanceof Error error) {
+                throw error;   // not a model failure: never hide it behind a fallback
             }
+            throw cause instanceof RuntimeException re ? re : new IllegalStateException(cause);
         }
     }
 
@@ -170,9 +186,12 @@ public class ModelCascade {
         return false;
     }
 
+    /** The number on the {@code CONFIDENCE:} line, capped at 100; decorated labels such as {@code **CONFIDENCE:**} work. */
     static Optional<Integer> confidence(String reply) {
-        var m = CONFIDENCE.matcher(reply);
-        return m.find() ? Optional.of(Math.min(100, Integer.parseInt(m.group(1)))) : Optional.empty();
+        return Replies.lineAfter(reply, "CONFIDENCE:")
+                .map(LEADING_NUMBER::matcher)
+                .filter(java.util.regex.Matcher::find)
+                .map(m -> Math.min(100, Integer.parseInt(m.group(1))));
     }
 
     /** The text on the {@code ANSWER:} line (the confidence goes on its own line, so one line is the answer). */
@@ -217,7 +236,7 @@ public class ModelCascade {
                 LlmProvider.resolve(smallPlaceholder(), () -> OllamaConfig.chatModel(smallName, 0)::chat),
                 LlmProvider.resolve(largePlaceholder(), () -> OllamaConfig.chatModel(largeName, 0)::chat),
                 LlmProvider.resolve(fallbackPlaceholder(), () -> OllamaConfig.chatModel(fallbackName, 0)::chat),
-                CALL_TIMEOUT, Thread::sleep, RandomGenerator.getDefault());
+                CALL_TIMEOUT, Thread::sleep, THREAD_SAFE_RANDOM);
 
         var questions = args.length > 0
                 ? List.of(String.join(" ", args))

@@ -1000,8 +1000,8 @@ model, and scores every answer the same way. Then you compare numbers, always on
 **How the sample does it.**
 - `GOLDEN` has five cases. Each has a question, a reference answer and the facts the answer must contain.
 - Every answer is scored twice:
-  - The **code check** (`codeCheck`) asks whether the answer contains every required fact, ignoring case. It is exact
-    and repeatable, but blind to wording: "Twelve" fails where "12" was expected.
+  - The **code check** (`codeCheck`) asks whether the answer contains every required fact as whole words, ignoring case
+    ("12" doesn't match "120"). It is repeatable, but blind to wording: "Twelve" fails where "12" was expected.
   - The **LLM judge** compares the answer with the reference and must start its reply with PASS or FAIL. Anything else
     is recorded as unreadable, not guessed. The answer being graded is fenced as data, so an answer can't tell the
     judge to pass it.
@@ -1033,11 +1033,13 @@ disagreement is "Twelve", which is right but phrased differently.
 **How the sample does it.**
 - The small model must reply `ANSWER: ...` plus `CONFIDENCE: 0-100`. Below `MIN_CONFIDENCE` (70), or if the reply is
   unreadable, the cascade escalates.
-- `callWithRetry` runs each call on a virtual thread with a deadline (`CALL_TIMEOUT`, 60 s), and cancels it if it
-  runs over.
+- `callWithRetry` runs each call on its own virtual thread with a deadline (`CALL_TIMEOUT`, 60 s). At the deadline it
+  interrupts the call and **stops waiting**. A call that ignores the interrupt keeps running in the background, but the
+  caller is never held. Note the trap this avoids: closing an executor in try-with-resources waits for a cancelled task
+  to finish, which quietly defeats the deadline.
 - `isRetryable` accepts timeouts, LangChain4j's `RetriableException` family (server errors, rate limits) and the
   sample's `TransientModelException`. Everything else is final.
-- Retries wait with **full jitter**: a random time between 0 and min(2 s, 200 ms × 2^attempt), for at most
+- Retries wait with **full jitter**: a random time between 0 and min(2 s, 200 ms × 2^(attempt−1)), for at most
   `MAX_ATTEMPTS` (3) attempts. The randomness keeps many clients from retrying at the same moment and overloading the
   server again.
 - **One retry layer.** With Ollama, the models are built with `OllamaConfig.chatModel(name, 0)`, which turns off the
@@ -1072,12 +1074,16 @@ every turn, so a **token budget** also bounds their *cost*.
 - It records each call's latency, prompt and reply size, and estimated tokens (characters ÷ 4, a rule of thumb), and
   logs the same at debug level.
 - It never records or logs the prompt or reply text, because prompts often hold user data.
-- Before a call, it reserves the prompt's tokens. If that would exceed the budget, it throws
-  `BudgetExceededException` **without calling the model**. Reserving up front means concurrent calls can't all slip
-  past the check together.
+- Before a call, it reserves the prompt's tokens **plus the largest reply allowed** (`maxReplyTokens`). If that doesn't
+  fit, it throws `BudgetExceededException` **without calling the model**. Afterwards the reservation is settled to the
+  reply's real size.
+- Reserving up front means concurrent calls can't all slip past the check together. Counting the reply in the
+  reservation means a long reply can't blow the budget.
+- That only holds if the model really stops at that size, so give it the same output limit (Ollama `numPredict`). A
+  reply that still runs over is charged in full and flagged "REPLY OVER LIMIT".
 - The history is capped (`MAX_RECORDS`).
 - `ObservabilityDemo` wraps the router (chapter 6) to print a call table. It then wraps a runaway supervisor whose
-  writer produces long drafts and never finishes, under a 1,500-token budget.
+  writer produces long drafts and never finishes, under a 1,500-token budget with replies of at most 300 tokens.
 
 **What to look for.** The router's table of four calls. The supervisor table grows to about 1,200 tokens, then
 "Outcome: stopped by the budget", before the supervisor's own turn limit is reached. LangGraph4j also logs the

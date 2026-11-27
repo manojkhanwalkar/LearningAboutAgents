@@ -62,9 +62,12 @@ class ProductionSamplesTest {
     }
 
     @Test
-    void codeCheckNeedsEveryFactIgnoringCase() {
+    void codeCheckNeedsEveryFactAsWholeWordsIgnoringCase() {
         assertTrue(EvalHarness.codeCheck("CARBON DIOXIDE and water", List.of("carbon dioxide")));
         assertFalse(EvalHarness.codeCheck("carbon", List.of("carbon dioxide")));
+        assertFalse(EvalHarness.codeCheck("It is 120.", List.of("12")));
+        assertFalse(EvalHarness.codeCheck("My eyes", List.of("yes")));
+        assertTrue(EvalHarness.codeCheck("It is 12.", List.of("12")));
     }
 
     @Test
@@ -151,6 +154,60 @@ class ProductionSamplesTest {
     }
 
     @Test
+    void theDeadlineHoldsEvenForACallThatIgnoresInterrupts() throws Exception {
+        var cascade = new ModelCascade(p -> {
+            long end = System.nanoTime() + 2_000_000_000L;
+            while (System.nanoTime() < end) {
+                Thread.onSpinWait();   // busy, never checks the interrupt flag
+            }
+            return "too late";
+        }, p -> "large", p -> "y", Duration.ofMillis(100), d -> { }, FIXED);
+
+        long start = System.nanoTime();
+        var result = cascade.ask("q");
+        long elapsedMs = (System.nanoTime() - start) / 1_000_000;
+
+        assertEquals("large", result.answeredBy());
+        assertTrue(elapsedMs < 1_500, "3 attempts × 100 ms deadline must not wait for the 2 s calls; took " + elapsedMs + " ms");
+    }
+
+    @Test
+    void anInterruptedCallerIsReleasedImmediately() throws Exception {
+        var modelSawInterrupt = new CountDownLatch(1);
+        var cascade = new ModelCascade(p -> {
+            try {
+                Thread.sleep(10_000);
+            } catch (InterruptedException e) {
+                modelSawInterrupt.countDown();
+            }
+            return "x";
+        }, p -> "x", p -> "x", Duration.ofSeconds(30), d -> { }, FIXED);
+        var caller = Thread.currentThread();
+        Thread.ofVirtual().start(() -> {
+            try {
+                Thread.sleep(100);
+            } catch (InterruptedException ignored) {
+                // test helper
+            }
+            caller.interrupt();
+        });
+
+        long start = System.nanoTime();
+        assertThrows(InterruptedException.class, () -> cascade.ask("q"));
+        assertTrue((System.nanoTime() - start) / 1_000_000 < 2_000);
+        assertTrue(modelSawInterrupt.await(2, java.util.concurrent.TimeUnit.SECONDS), "the model call must be cancelled");
+        Thread.interrupted();
+    }
+
+    @Test
+    void errorsAreNotMistakenForModelFailures() {
+        var cascade = cascade(p -> {
+            throw new StackOverflowError("bug");
+        }, p -> "x", p -> "y", new ArrayList<>());
+        assertThrows(StackOverflowError.class, () -> cascade.ask("q"));
+    }
+
+    @Test
     void everyModelFailingGivesNoAnswerButNoException() throws Exception {
         java.util.function.Function<String, String> down = p -> {
             throw new ModelCascade.TransientModelException("down");
@@ -167,6 +224,9 @@ class ProductionSamplesTest {
             assertTrue(cascade.backoff(attempt).compareTo(ModelCascade.MAX_DELAY) <= 0);
         }
         assertEquals(Optional.of(100), ModelCascade.confidence("confidence: 250"));
+        assertEquals(Optional.of(95), ModelCascade.confidence("**ANSWER:** Paris\n**CONFIDENCE:** 95"));
+        assertEquals(Optional.empty(), ModelCascade.confidence("CONFIDENCE: high"));
+        assertTrue(ModelCascade.THREAD_SAFE_RANDOM.nextLong(10) < 10);
         assertEquals(Optional.of("Paris"), ModelCascade.answer("**ANSWER:** Paris\nCONFIDENCE: 9"));
         assertTrue(ModelCascade.isRetryable(new IllegalStateException(new RateLimitException("x"))));
         assertFalse(ModelCascade.isRetryable(new IllegalArgumentException("x")));
@@ -183,7 +243,7 @@ class ProductionSamplesTest {
     @Test
     void everyCallIsRecordedWithoutItsText() {
         var clock = new AtomicInteger();
-        var observed = new ObservedLlm(p -> "reply text", Integer.MAX_VALUE, () -> clock.getAndAdd(7_000_000) * 1L);
+        var observed = new ObservedLlm(p -> "reply text", Integer.MAX_VALUE, 100, () -> clock.getAndAdd(7_000_000) * 1L);
 
         observed.apply("prompt one");
         observed.apply("prompt two");
@@ -202,13 +262,33 @@ class ProductionSamplesTest {
         var observed = new ObservedLlm(p -> {
             calls.incrementAndGet();
             return "x".repeat(40);
-        }, 20);
+        }, 30, 10);
 
-        observed.apply("x".repeat(20));   // 5 + 10 tokens
-        var e = assertThrows(ObservedLlm.BudgetExceededException.class, () -> observed.apply("x".repeat(40)));
+        observed.apply("x".repeat(20));   // reserves 5 + 10, settles to 5 + 10 = 15
+        var e = assertThrows(ObservedLlm.BudgetExceededException.class, () -> observed.apply("x".repeat(40)));   // 15 + 10 + 10 > 30
 
         assertEquals(1, calls.get());
-        assertTrue(e.getMessage().contains("budget of 20"));
+        assertEquals(15, observed.usedTokens());
+        assertTrue(e.getMessage().contains("budget of 30"));
+    }
+
+    @Test
+    void theReplyIsReservedSoALongReplyCannotSilentlyOverspend() {
+        var observed = new ObservedLlm(p -> "x".repeat(4_000), 100, 50);
+
+        observed.apply("x".repeat(40));   // 10 + 50 reserved; the reply is 1,000 tokens, over its 50 limit
+
+        assertTrue(observed.records().getFirst().replyOverran());
+        assertThrows(ObservedLlm.BudgetExceededException.class, () -> observed.apply("p"));
+        // With a reply cap the model can't exceed, the budget can't be exceeded either.
+        var capped = new ObservedLlm(p -> "x".repeat(200), 100, 50);
+        assertThrows(ObservedLlm.BudgetExceededException.class, () -> {
+            for (int i = 0; i < 10; i++) {
+                capped.apply("x".repeat(40));
+            }
+        });
+        assertTrue(capped.usedTokens() <= 100);
+        assertFalse(capped.records().getFirst().replyOverran());
     }
 
     @Test
@@ -223,14 +303,14 @@ class ProductionSamplesTest {
     @Test
     void concurrentCallsCannotOverspendAndHistoryIsCapped() throws Exception {
         var start = new CountDownLatch(1);
-        var observed = new ObservedLlm(p -> "", 100);
+        var observed = new ObservedLlm(p -> "x".repeat(40), 100, 10);   // each call: 10 prompt + 10 reply tokens
         var refused = new AtomicInteger();
         try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
             for (int i = 0; i < 50; i++) {
                 executor.submit(() -> {
                     start.await();
                     try {
-                        observed.apply("x".repeat(40));   // 10 tokens each: only 10 fit in 100
+                        observed.apply("x".repeat(40));   // 20 tokens each: only 5 fit in 100
                     } catch (ObservedLlm.BudgetExceededException e) {
                         refused.incrementAndGet();
                     }
@@ -239,9 +319,9 @@ class ProductionSamplesTest {
             }
             start.countDown();
         }
-        assertEquals(10, observed.calls());
-        assertEquals(40, refused.get());
-        assertTrue(observed.usedTokens() <= 100);
+        assertEquals(5, observed.calls());
+        assertEquals(45, refused.get());
+        assertEquals(100, observed.usedTokens());
 
         var many = new ObservedLlm(p -> "", Integer.MAX_VALUE);
         for (int i = 0; i < ObservedLlm.MAX_RECORDS + 5; i++) {
@@ -328,8 +408,24 @@ class ProductionSamplesTest {
     }
 
     @Test
-    void cacheMainShowsTheFalseHit() throws Exception {
-        String out = MainRunner.run(SemanticCache::main);
-        assertTrue(out.contains("What is the capital of Spain?    → Paris"));
+    void ttlStartsWhenTheAnswerArrives() {
+        var clock = new MutableClock();
+        var cache = new SemanticCache(p -> {
+            clock.now = clock.now.plus(Duration.ofMinutes(9));   // a slow model call
+            return "answer";
+        }, new HashingEmbeddingModel(), 0.99, Duration.ofMinutes(10), clock);
+
+        cache.apply("slow question");
+        clock.now = clock.now.plus(Duration.ofMinutes(5));   // 14 min after the lookup began, 5 after the answer
+        assertTrue(cache.lookup("slow question").hit());
+    }
+
+    @Test
+    void mainsAcceptArguments() throws Exception {
+        String out = MainRunner.run(SemanticCache::main, "capital", "of", "Peru", "|", "Peru", "capital");
+        assertTrue(out.contains("capital of Peru"));
+        assertTrue(MainRunner.run(SemanticCache::main).contains("What is the capital of Spain?    → Paris"));
+        assertTrue(MainRunner.run(ObservabilityDemo::main, "error", "on", "login").contains("Router, observed"));
+        assertTrue(MainRunner.run(EvalHarness::main, "x").contains("Arguments are ignored"));
     }
 }

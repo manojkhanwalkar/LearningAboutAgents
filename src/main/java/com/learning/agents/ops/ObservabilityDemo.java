@@ -20,6 +20,8 @@ import java.util.function.Function;
 public class ObservabilityDemo {
 
     static final int RUNAWAY_BUDGET = 1_500;
+    /** The longest reply the budget assumes; with Ollama, set {@code numPredict} to the same so the budget holds. */
+    static final int MAX_REPLY_TOKENS = 300;
 
     /** Canned router replies (the router's own placeholder is package-private to its sample). */
     static ScriptedLlm routerPlaceholder() {
@@ -42,7 +44,7 @@ public class ObservabilityDemo {
         System.out.println("  call  latency  prompt  reply  ~tokens");
         for (var r : observed.records()) {
             System.out.printf("  #%-4d %5d ms %6d %6d %8d%s%n", r.seq(), r.latencyMs(), r.promptChars(), r.replyChars(),
-                    r.estimatedTokens(), r.failed() ? "  FAILED" : "");
+                    r.estimatedTokens(), (r.failed() ? "  FAILED" : "") + (r.replyOverran() ? "  REPLY OVER LIMIT" : ""));
         }
         System.out.printf("  total: %d call(s), ~%d tokens of %s budget, %d ms%n%n", observed.calls(), observed.usedTokens(),
                 observed.budgetTokens() == Integer.MAX_VALUE ? "no" : String.valueOf(observed.budgetTokens()),
@@ -55,7 +57,7 @@ public class ObservabilityDemo {
 
     /** Runs the supervisor under a budget and reports what ended it: the budget, or a normal finish. */
     static BudgetedRun runWithBudget(Function<String, String> llm, int budget) throws Exception {
-        var observed = new ObservedLlm(llm, budget);
+        var observed = new ObservedLlm(llm, budget, MAX_REPLY_TOKENS);
         return new BudgetedRun(supervise(observed), observed);
     }
 
@@ -79,7 +81,10 @@ public class ObservabilityDemo {
     public static void main(String[] args) throws Exception {
         var router = new ObservedLlm(LlmProvider.resolve(routerPlaceholder()), Integer.MAX_VALUE);
         var graph = RouterGraph.build(router);
-        for (String query : new String[]{"I was charged twice this month", "The app shows error 500 on login"}) {
+        String[] queries = args.length > 0
+                ? new String[]{String.join(" ", args)}
+                : new String[]{"I was charged twice this month", "The app shows error 500 on login"};
+        for (String query : queries) {
             graph.invoke(GraphInput.args(Map.of(RouterState.QUERY, query)), RunnableConfig.builder().build());
         }
         printTrace("Router, observed (no budget):", router);

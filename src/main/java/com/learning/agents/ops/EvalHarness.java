@@ -6,7 +6,6 @@ import com.learning.agents.llm.ScriptedLlm;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 import java.util.Optional;
 import java.util.function.Function;
 import java.util.regex.Pattern;
@@ -16,7 +15,7 @@ import java.util.regex.Pattern;
  * made your agent better or worse. Run a fixed <b>golden dataset</b> of questions with known answers through the
  * agent and score every answer two ways:
  * <ul>
- *   <li><b>code check</b>: does the answer contain every required fact? Cheap, exact and repeatable, but blind to
+ *   <li><b>code check</b>: does the answer contain every required fact, as whole words? Cheap and repeatable, but blind to
  *       wording ("four" vs "4") and to answers that are right in a different way.</li>
  *   <li><b>LLM judge</b>: a model grades the answer against the reference with a rubric and replies {@code PASS} or
  *       {@code FAIL}. It handles wording, but it can be wrong or lenient, so it is parsed strictly, and the report
@@ -79,10 +78,13 @@ public class EvalHarness {
         return new Report(candidate, List.copyOf(results));
     }
 
-    /** True if the answer contains every required fact, ignoring case. */
+    /**
+     * True if the answer contains every required fact as whole words, ignoring case, so "12" doesn't match "120" and
+     * "yes" doesn't match "eyes".
+     */
     static boolean codeCheck(String answer, List<String> mustContain) {
-        String lower = answer.toLowerCase(Locale.ROOT);
-        return mustContain.stream().allMatch(fact -> lower.contains(fact.toLowerCase(Locale.ROOT)));
+        return mustContain.stream().allMatch(fact -> Pattern.compile("(?<![\\p{L}\\p{N}])" + Pattern.quote(fact) + "(?![\\p{L}\\p{N}])",
+                Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE).matcher(answer).find());
     }
 
     /** Asks the judge for PASS or FAIL; only a reply that starts with one of those words counts. */
@@ -135,6 +137,9 @@ public class EvalHarness {
     }
 
     public static void main(String[] args) {
+        if (args.length > 0) {
+            System.out.println("Note: this sample evaluates its golden dataset; edit GOLDEN to add questions. Arguments are ignored.");
+        }
         var harness = new EvalHarness(LlmProvider.resolve(placeholderJudge()));
         // With LLM_BACKEND=ollama both candidates and the judge are the configured model; to compare two models, set
         // OLLAMA_MODEL per run, or build the candidates with OllamaConfig.chatModel("gemma3") etc.

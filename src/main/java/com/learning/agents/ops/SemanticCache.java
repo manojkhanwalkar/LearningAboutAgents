@@ -27,7 +27,9 @@ import java.util.function.Function;
  * answers that don't depend on details a near-duplicate might change (numbers, names, dates), or not at all.
  * <p>
  * Bounded in two ways: at most {@link #MAX_ENTRIES} entries (least recently used evicted first) and a time-to-live,
- * so stale answers expire. Thread-safe; the model call itself happens outside the lock.
+ * so stale answers expire. Thread-safe; the model call itself happens outside the lock, so two threads that miss on the
+ * same new question at the same moment both call the model (a "stampede"); the answer is still correct, it just costs
+ * twice. A production cache would share one in-flight call per question.
  */
 public final class SemanticCache implements Function<String, String> {
 
@@ -94,7 +96,8 @@ public final class SemanticCache implements Function<String, String> {
         }
         String answer = llm.apply(question);   // outside the lock: a slow model call must not block other lookups
         synchronized (this) {
-            entries.put(question, new Entry(question, q, answer, now));
+            // The TTL starts when the answer exists, not when the lookup began.
+            entries.put(question, new Entry(question, q, answer, clock.instant()));
             if (entries.size() > MAX_ENTRIES) {
                 entries.remove(entries.keySet().iterator().next());   // least recently used
             }
@@ -126,9 +129,9 @@ public final class SemanticCache implements Function<String, String> {
             "what's the capital of France",
             "What is the capital of Spain?");
 
-    static void run(String title, SemanticCache cache) {
+    static void run(String title, SemanticCache cache, List<String> questions) {
         System.out.println(title);
-        for (String question : QUESTIONS) {
+        for (String question : questions) {
             Lookup lookup = cache.lookup(question);
             System.out.printf("  %-32s → %-7s %s%n", question, lookup.answer(), lookup.hit()
                     ? "(cache hit, %.2f similar to \"%s\")".formatted(lookup.similarity(), lookup.matched().orElse(""))
@@ -138,11 +141,13 @@ public final class SemanticCache implements Function<String, String> {
     }
 
     public static void main(String[] args) {
+        List<String> questions = args.length > 0 ? List.of(String.join(" ", args).split("\\s*\\|\\s*")) : QUESTIONS;
+        // Pass your own questions separated by "|", e.g. -Dexec.args="capital of Peru | what's Peru's capital".
         Function<String, String> llm = LlmProvider.resolve(placeholder());
         EmbeddingModel embeddings = LlmProvider.resolveEmbeddings(new HashingEmbeddingModel());
         run("Threshold 0.90 (safe for these embeddings):",
-                new SemanticCache(llm, embeddings, 0.90, Duration.ofHours(1), Clock.systemUTC()));
+                new SemanticCache(llm, embeddings, 0.90, Duration.ofHours(1), Clock.systemUTC()), questions);
         run("Threshold 0.40 (too loose: watch Spain get France's answer):",
-                new SemanticCache(llm, embeddings, 0.40, Duration.ofHours(1), Clock.systemUTC()));
+                new SemanticCache(llm, embeddings, 0.40, Duration.ofHours(1), Clock.systemUTC()), questions);
     }
 }
