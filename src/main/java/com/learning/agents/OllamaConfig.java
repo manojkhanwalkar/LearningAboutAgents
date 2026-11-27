@@ -1,6 +1,7 @@
 package com.learning.agents;
 
 import dev.langchain4j.model.ollama.OllamaChatModel;
+import dev.langchain4j.model.ollama.OllamaEmbeddingModel;
 
 import java.time.Duration;
 
@@ -10,13 +11,15 @@ import java.time.Duration;
  * Settings come from environment variables so examples run unchanged on any machine:
  * <ul>
  *   <li>{@code OLLAMA_BASE_URL} – default {@value #DEFAULT_BASE_URL}</li>
- *   <li>{@code OLLAMA_MODEL} – default {@value #DEFAULT_MODEL} (must support tool calling for the tool/graph examples)</li>
+ *   <li>{@code OLLAMA_MODEL} – default {@value #DEFAULT_MODEL} (must support tool calling for {@code ToolCallingAgent})</li>
+ *   <li>{@code OLLAMA_EMBEDDING_MODEL} – default {@value #DEFAULT_EMBEDDING_MODEL}, used by the embedding samples</li>
  * </ul>
  */
 public final class OllamaConfig {
 
     public static final String DEFAULT_BASE_URL = "http://localhost:11434";
     public static final String DEFAULT_MODEL = "llama3.1";
+    public static final String DEFAULT_EMBEDDING_MODEL = "nomic-embed-text";
 
     private OllamaConfig() {
     }
@@ -29,14 +32,32 @@ public final class OllamaConfig {
         return env("OLLAMA_MODEL", DEFAULT_MODEL);
     }
 
+    public static String embeddingModelName() {
+        return env("OLLAMA_EMBEDDING_MODEL", DEFAULT_EMBEDDING_MODEL);
+    }
+
     public static OllamaChatModel chatModel() {
+        return chatModel(modelName());
+    }
+
+    /** A chat model like {@link #chatModel()} but for a named model, for samples that use more than one. */
+    public static OllamaChatModel chatModel(String modelName) {
         return OllamaChatModel.builder()
                 .baseUrl(baseUrl())
-                .modelName(modelName())
+                .modelName(modelName)
                 .temperature(0.2)
                 .timeout(Duration.ofMinutes(2))
                 .logRequests(false)
                 .logResponses(false)
+                .build();
+    }
+
+    /** The embedding model the RAG, memory, cache and tool-retrieval samples use when {@code LLM_BACKEND=ollama}. */
+    public static OllamaEmbeddingModel embeddingModel() {
+        return OllamaEmbeddingModel.builder()
+                .baseUrl(baseUrl())
+                .modelName(embeddingModelName())
+                .timeout(Duration.ofMinutes(1))
                 .build();
     }
 
