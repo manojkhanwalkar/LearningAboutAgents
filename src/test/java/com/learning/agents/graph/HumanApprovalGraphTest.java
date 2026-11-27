@@ -1,6 +1,7 @@
 package com.learning.agents.graph;
 
 import com.learning.agents.MainRunner;
+import org.bsc.langgraph4j.GraphInput;
 import org.bsc.langgraph4j.RunnableConfig;
 import org.junit.jupiter.api.Test;
 
@@ -26,7 +27,7 @@ class HumanApprovalGraphTest {
         });
         var config = RunnableConfig.builder().threadId("t1").build();
 
-        ApprovalState paused = graph.invoke(Map.of(ApprovalState.REQUEST, "clean up"), config).orElseThrow();
+        ApprovalState paused = graph.invoke(GraphInput.args(Map.of(ApprovalState.REQUEST, "clean up")), config).orElseThrow();
 
         assertEquals("ACTION: delete the logs", paused.proposal());
         assertTrue(paused.result().isEmpty());

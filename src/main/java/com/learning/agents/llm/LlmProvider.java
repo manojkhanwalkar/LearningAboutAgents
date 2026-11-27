@@ -49,6 +49,14 @@ public final class LlmProvider {
         });
     }
 
+    /** Returns the streaming model for the backend named by {@value #ENV}: {@code placeholder}, or Ollama streaming. */
+    public static StreamingLlm resolveStreaming(StreamingLlm placeholder) {
+        return resolve(System.getenv(ENV), placeholder, () -> {
+            log.info("Streaming chat model: {}", OllamaConfig.modelName());
+            return new OllamaStreamingLlm(OllamaConfig.streamingChatModel());
+        });
+    }
+
     /**
      * Picks {@code placeholder} or the Ollama-backed value, given the backend name; package-private so it can be tested.
      *

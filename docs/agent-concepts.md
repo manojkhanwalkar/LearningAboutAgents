@@ -31,6 +31,11 @@ what tends to go wrong in real systems. Read it next to the code: every chapter 
   18. [Plan-and-execute with replanning](#18-plan-and-execute-with-replanning--reasoningplanexecutegraph)
   19. [Reflexion](#19-reflexion--reasoningreflexiongraph)
   20. [Tree of Thoughts](#20-tree-of-thoughts--reasoningtreeofthoughtsagent)
+- LangGraph4j features
+  21. [Parallel branches](#21-parallel-branches--langgraphparallelbranchesgraph)
+  22. [Subgraphs](#22-subgraphs--langgraphsubgraphgraph)
+  23. [Time travel with checkpoints](#23-time-travel-with-checkpoints--langgraphtimetravelgraph)
+  24. [Streaming](#24-streaming--langgraphstreamingagent)
 - [Glossary](#glossary)
 
 ---
@@ -92,7 +97,7 @@ Two LangGraph4j details that trip people up:
 ## Suggested reading order
 
 Start with chapters 1–4 to see a model call, tools, a loop and the ReAct pattern. Then read 5–9 in order: each
-workflow pattern adds one idea to the previous one. Chapters 10–14 are independent; read them when you need them. Read 15–17 after chapter 12, and 18–20 after chapter 7.
+workflow pattern adds one idea to the previous one. Chapters 10–14 are independent; read them when you need them. Read 15–17 after chapter 12, 18–20 after chapter 7, and 21–24 after chapter 9.
 
 ---
 
@@ -705,6 +710,145 @@ kept with their scores, then the solution: `10 - 4 = 6`, `13 - 9 = 4`, `4 * 6 = 
 
 ---
 
+## 21. Parallel branches — `langgraph.ParallelBranchesGraph`
+
+**The idea.** When steps don't depend on each other, run them at the same time. In a graph that is a *fan-out*:
+several edges leave one node, so their targets form one parallel step. It ends in a *fan-in*: all of them lead into
+one join node, which runs once every branch has finished. Three model calls of 2 seconds each then take about 2
+seconds instead of 6.
+
+**How the sample does it.**
+- Three analysts (optimist, skeptic, economist) each get an edge from `START` and an edge to `judge`. Adding a branch
+  is one `ANALYSTS` entry.
+- Each branch returns one entry for `VIEWS`. That key is an appender channel, so the branches' results are merged
+  rather than overwriting each other. The judge sorts them, because branch order isn't guaranteed.
+- **The catch.** LangGraph4j runs the branches *one after another* unless you give the fan-out node an executor:
+  `RunnableConfig.builder().addParallelNodeExecutor(START, executor)`. `main` runs both ways, with a simulated
+  300 ms per call (`withLatency`), and prints the time each took.
+
+```
+         ┌─ optimist ──┐
+  START ─┼─ skeptic ───┼─→ judge → END
+         └─ economist ─┘
+```
+
+**What to look for.** The three views and the verdict, then the two timings: the default run takes about four call
+times (three branches plus the judge), the parallel run about two.
+
+**Try this.**
+- Add a fourth analyst and watch the default time grow while the parallel time stays flat.
+- Compare with chapter 14, which parallelises calls inside one node; here the graph itself is parallel.
+
+**In production.**
+- Parallel calls multiply the load on your model server, so a small local box may queue them anyway. Size the
+  executor to what the server can handle.
+- Every branch must write to its own entry or to an appender key, never to the same plain key.
+
+## 22. Subgraphs — `langgraph.SubgraphGraph`
+
+**The idea.** Big agent systems are built from smaller ones. A *subgraph* is a complete compiled graph, with its own
+nodes, edges and loops, used as a single node of a parent graph. The parent sees one step ("research"), and the
+subgraph can be built and tested on its own.
+
+**How the sample does it.**
+- `research(llm)` is a standalone graph. `gather` adds up to two facts per round, and `afterGather` loops until there
+  are `MIN_NOTES` (3) notes or `MAX_ROUNDS` (3) rounds have run. Then `summarize` condenses the notes.
+- `build(llm)` is the parent, outline → research → write. It plugs the subgraph in with
+  `addNode("research", research(llm))`.
+- Parent and subgraph share **one state type** (`ReportState`). The subgraph reads the parent's outline and leaves
+  notes and a summary for the parent's `write` step.
+
+**Compiled or not: the pitfall this sample found.** LangGraph4j accepts a subgraph in two forms:
+- `addNode(id, stateGraph)`, used here, **inlines** the subgraph: its nodes update the shared state exactly like the
+  parent's own nodes.
+- `addNode(id, compiledGraph)` runs it as a separate graph and merges its *whole* final state back when it finishes.
+  Any list the parent had already filled then gets appended a **second time**. The first version of this sample
+  printed the parent's "outline: done" twice.
+
+If you must use a compiled subgraph, give it keys the parent never writes, or use the de-duplicating
+`Channels.appender` on shared lists. That plain appender also drops legitimate repeats, so it is a fallback, not the
+default.
+
+**What to look for.** The `[report]` lines (outline, write) and the `[research]` lines (two gather rounds and
+summarize), each printed once, then the notes and the report.
+
+**Try this.**
+- Reuse the research subgraph in a second parent graph.
+- Make `gather` find nothing and watch `MAX_ROUNDS` end the subgraph's loop.
+
+**In production.**
+- Treat a subgraph's state keys as its interface: document which keys it reads and which it writes.
+- When the shared-state coupling gets awkward, call the subgraph from a normal node with its own state type instead,
+  and map the keys by hand.
+
+## 23. Time travel with checkpoints — `langgraph.TimeTravelGraph`
+
+**The idea.** With a checkpointer (chapter 9), every step of a run is saved. That makes runs inspectable and
+rewindable:
+- **history** lists every saved step;
+- **replay** resumes from a past step as it was, re-running the nodes after it;
+- **fork** changes the state saved at a past step, then runs on from the changed copy, while the original run stays
+  in the history.
+
+Use this to debug "why did it do that?", to retry from just before a bad step, or to let a person correct the state.
+
+**How the sample does it.**
+- The graph (draft → polish) compiles with `MemorySaver` and **`releaseThread(false)`**. Without that flag, a finished
+  thread's checkpoints are released and the history comes back empty.
+- `history()` reverses `getStateHistory`, which returns newest first. Each snapshot's `nextNodeId()` says which node
+  would run if you resumed from it, and `checkpointBefore("draft")` finds the right checkpoint that way.
+- `replay(id)` invokes `GraphInput.resume()` with `checkPointId(id)` in the config.
+- `fork(id, changes)` copies the saved checkpoint (`Checkpoint.copyOf`), applies the changes to the copy, saves the
+  copy as a new checkpoint (`saver.put` with a config that names only the thread), and resumes from it. Why not
+  `graph.updateState(config, changes)`? Given a checkpoint id, LangGraph4j **rewrites that checkpoint in place**, so
+  the step you forked from would be gone and could no longer be replayed. The first version of this sample made
+  exactly that mistake.
+
+**What to look for.**
+- The history: `__START__`, `draft`, `polish`.
+- The replay gives the same tagline, because the placeholder is deterministic. A real model would likely vary.
+- The fork with `tone = "playful"` gives a different tagline.
+- The checkpoint count grows, because the fork added steps, and the original "before draft" step is still there.
+
+**Try this.**
+- Fork from *before polish* instead, and edit the draft itself.
+- Use a real model and replay several times to see run-to-run variation.
+
+**In production.** Use a persistent checkpointer (a database) so history survives restarts. History grows with
+every run, so decide how long to keep it.
+
+## 24. Streaming — `langgraph.StreamingAgent`
+
+**The idea.** A local model may take many seconds to answer. Streaming shows progress as it happens, at two levels:
+- **node events**: tell the user which step is running;
+- **tokens**: show the answer as it is written.
+
+The first words appear in well under a second, so the wait feels much shorter.
+
+**How the sample does it.**
+- **Node events.** `run` iterates over `graph.stream(...)` instead of calling `invoke`. Each `NodeOutput` arrives
+  when its node finishes, with the state so far. LangGraph4j also emits its own events (`__START__`, `__END__`),
+  which `isUserNode` filters out.
+- **Tokens.** The `answer` node calls a `StreamingLlm`, which hands each piece of the reply to a callback.
+  - With the placeholder, `StreamingLlm.fromReplies` splits a canned reply into words.
+  - With Ollama, `OllamaStreamingLlm` wraps LangChain4j's `OllamaStreamingChatModel`. Its callbacks arrive on another
+    thread, so the adapter waits for the final one (at most 2 minutes) and turns an error callback into an exception.
+
+**What to look for.**
+- `[event] plan finished`, then the answer printed piece by piece, then `[event] answer finished (201 chars)`.
+- With the placeholder the words arrive all at once. With `LLM_BACKEND=ollama` you'll see them trickle in.
+
+**Try this.**
+- Print a spinner while waiting for the first token.
+- Stream the `plan` step too.
+
+**In production.**
+- Streamed text can't be validated until it's complete, so run output guardrails (chapter 13) on the final text, or
+  buffer per sentence.
+- Always put a timeout on the wait for the final callback.
+
+---
+
 ## Glossary
 
 | Term | Meaning |
@@ -717,6 +861,9 @@ kept with their scores, then the solution: `10 - 4 = 6`, `13 - 9 = 4`, `4 * 6 = 
 | **Checkpointer** | Saves graph state after each step, so a run can pause, resume or be inspected |
 | **Embedding** | A vector representing text, where similar texts have nearby vectors |
 | **Reranking** | Re-scoring a few retrieved candidates with a slower, more accurate judge (here, the LLM) |
+| **Fan-out / fan-in** | Several branches leaving one node and running in parallel, then joining at one node |
+| **Subgraph** | A complete graph used as a single node of a bigger graph |
+| **Streaming** | Delivering output piece by piece as it is produced instead of all at the end |
 | **Beam search** | Keep only the best *k* partial solutions at each step instead of exploring all of them |
 | **Replanning** | Rewriting the remaining plan after each step, using what that step revealed |
 | **Memory poisoning** | Planting text in an agent's stored memory so it is injected into later prompts |
