@@ -2,9 +2,11 @@
 
 This guide walks through every sample in the repository. Each chapter explains one idea behind LLM agents, shows
 how the sample implements it, tells you what to look for when you run it, and suggests changes to try. It ends with
-what tends to go wrong in real systems. Read it next to the code: every chapter names the class to open.
+what tends to go wrong in real systems. A *Going deeper* section in each chapter explains why the technique
+works, where it breaks and what it costs. Read it next to the code: every chapter names the class to open.
 
 - [How the samples are built](#how-the-samples-are-built)
+- [Ideas that run through every chapter](#ideas-that-run-through-every-chapter)
 - [Suggested reading order](#suggested-reading-order)
 - Foundations
   1. [Calling a model](#1-calling-a-model--chathelloollama)
@@ -104,6 +106,67 @@ Two LangGraph4j details that trip people up:
   `appenderWithDuplicate`.
 - Every value stored in state must be `Serializable`.
 
+## Ideas that run through every chapter
+
+The 32 chapters are variations on a handful of ideas. Once you can see these, each new pattern reads as a
+recombination of them rather than something to memorise.
+
+**1. The model predicts text; it doesn't look things up.** An LLM turns the prompt into tokens, computes a
+probability for every possible next token, picks one, appends it, and repeats. Three consequences follow:
+- Everything the model "knows" in a call comes from one of two places: its *weights* (frozen at training time,
+  fuzzy, impossible to cite) or the *prompt* (fresh, specific, checkable). RAG (12, 15, 16), memory (11, 17) and
+  tool results (2, 4, 25) are all ways of moving knowledge out of the weights and into the prompt.
+- A fluent wrong answer and a right one come out of the same process. Confident tone tells you nothing.
+- Each token is conditioned on the tokens before it, so an early mistake is carried forward rather than noticed.
+  Self-consistency (14), Reflexion (19) and Tree of Thoughts (20) all exist to escape that.
+
+**2. The context window is the only working memory.** The model is stateless: every call rebuilds its whole world
+from the prompt. So most of agent design is *context engineering*, which means deciding what goes into the prompt, in
+what order, fenced how, and what gets left out. More is not better. Every token costs money and time, and models
+pay less attention to the middle of long prompts than to their start and end ("lost in the middle", Liu et al.,
+2023). Chapters 11, 15, 17, 26 and 31 are about keeping the context small and relevant.
+
+**3. Checking is easier than generating.** Confirming that `13 - 9 = 4` is trivial; finding the path to 24 is not.
+Confirming that JSON parses is trivial; writing a correct review summary is not. This *generator–verifier gap* is
+behind most reliability patterns: let the model generate, and put a checker after it. The stronger the checker, the
+more a retry loop is worth. In order of strength:
+
+| Checker | Example chapters | Why it is that strong |
+|---|---|---|
+| Code that computes the answer | 19 (`checkPrimes`), 20 (`parseStep`) | Exact and repeatable |
+| Code that checks the shape | 5 (gate), 10 (schema), 6 (allow-list) | Exact, but blind to meaning |
+| A separate model call as judge | 16 (grader), 28 (judge), 29 (LLM judge) | Understands meaning, has biases |
+| The same model critiquing itself | 3 (reviewer), 30 (self-rated confidence) | Shares the generator's blind spots |
+
+**4. Errors compound.** If each step of a run is right 95% of the time, a 10-step run is fully right only about 60%
+of the time (0.95¹⁰ ≈ 0.60). Long autonomous runs fail for this reason, not because any one step is bad. The
+remedies recur throughout the guide: use fewer steps, check between steps so an error is caught at step 2 rather
+than step 10 (5, 16), replan when reality diverges (18), and put a person in front of irreversible steps (9).
+
+**5. Choose the least autonomy that does the job.** The patterns sit on a spectrum of who decides what happens next:
+
+```
+fixed steps ──── code picks a branch ──── model plans within limits ──── model decides every step
+ chaining (5)      routing (6)              orchestrator (7), plan (18)    ReAct (4), supervisor (8), handoffs (27)
+```
+
+Moving right buys flexibility and pays for it with predictability, cost, latency and testability. Anthropic's
+*Building effective agents* (2024) draws the same line between *workflows*, where code fixes the path, and
+*agents*, where the model chooses it. Start at the left and move right only when the task really varies at run time.
+
+**6. The model proposes; code decides.** Treat model output like user input, as untrusted text to be parsed and
+checked. In every sample, a route is mapped onto an allow-list with a safe default, a loop has a hard cap, and the
+result of an action comes from code, never from the model saying it happened. Untrusted text going *into* the
+prompt (from users, documents, tool results, memory or other agents) is fenced and escaped. Fencing lowers the risk
+but can't remove it: a model reads instructions and data through the same channel, which is the root cause of
+prompt injection. That is why the real defence is limiting what the agent *can* do.
+
+**7. Cost is calls × tokens; latency is calls in sequence.** You can price any pattern on paper before running it:
+count the model calls per request, estimate each prompt's size, and note which calls have to wait for each other.
+Calls in sequence add up their latency. Parallel calls (14, 21) add load on the server but not wall-clock time. Loops
+that resend a growing transcript (4, 8) cost more than their call count suggests, because each prompt is longer than
+the last.
+
 ## Suggested reading order
 
 The chapters are numbered by topic, not by difficulty. To build understanding step by step, read them in the stages
@@ -165,6 +228,20 @@ Everything else in this repository is code around this one call.
 variables, with a low temperature (0.2), a 10-second connect timeout and a 2-minute reply timeout.
 `model.chat(prompt)` returns the reply text.
 
+**Going deeper.**
+- *Two phases, two costs.* The server first reads the whole prompt in one parallel pass (*prefill*), then writes
+  the reply one token at a time (*decode*). Decoding dominates the wait: a 500-token reply takes far longer than
+  reading a 500-token prompt. That is why streaming (24) helps so much, and why budgets reserve room for the reply
+  (31).
+- *What temperature does.* The model's scores for each candidate token are divided by the temperature before being
+  turned into probabilities. Below 1 the favourite becomes more of a favourite; above 1 the choice spreads out. A
+  low temperature makes the *most likely* answer more likely. That helps only when the most likely answer is right.
+- *Roles are text too.* A chat API's system, user and assistant messages are rendered into one prompt with special
+  markers. The model was trained to give the system message weight, but nothing enforces it. This is part of why
+  prompt injection works.
+- *Cold start.* Ollama loads a model into memory on first use and unloads it after a few idle minutes, so the first
+  call after a pause is much slower than the rest. Keep that in mind when you time things.
+
 **What to look for.** The model name and the reply. Run it twice: with temperature 0.2 the answers are similar but
 rarely identical.
 
@@ -188,6 +265,19 @@ description. The model reads those descriptions, so write them for the model. `A
 generates an implementation of the `MathAssistant` interface. It sends the system message and the tool schemas,
 runs any tool calls the model asks for, feeds the results back, and repeats until the model gives a text answer.
 `MessageWindowChatMemory.withMaxMessages(20)` keeps the last 20 messages as conversation memory.
+
+**Going deeper.**
+- *The model never runs anything.* Tool-calling models are fine-tuned to emit a special structured reply when tools
+  are offered. The framework parses that reply, runs your Java method and sends the result back as a new message.
+  This is the ReAct loop of chapter 4, with the text format hidden inside the API.
+- *Tool schemas are prompt tokens.* Each tool's name, description and parameters are inserted into the prompt on
+  every call. The model chooses a tool by *reading* those descriptions, so a description is a prompt. Writing it
+  well matters more than the method name. Chapter 26 takes this further and searches over descriptions.
+- *Why models need a calculator.* Tokenizers split numbers into chunks that don't line up with digits, and the
+  model learned arithmetic as patterns rather than as an algorithm. It gets common sums right and unusual ones
+  subtly wrong, which is the worst kind of error. Pushing exact work into code is a theme of the whole guide.
+- *The confused deputy.* The model calls tools with *its* authority, but text from users or documents can steer
+  which tool and which arguments. Each tool should validate its inputs as if a stranger had typed them.
 
 **What to look for.** The answer to "square root of (12.5 × 8) plus 4" should be 14. `Calculator` prints a
 `[tool] ...` line each time the model calls a tool. Turn on `logRequests(true)` in `OllamaConfig` to see the raw
@@ -219,6 +309,19 @@ START → writer → reviewer ─┬─ approved / limit → END
            ↑               │
            └──── revise ───┘
 ```
+
+**Going deeper.**
+- *Why a second call to the same model helps.* Writing asks the model to get everything right in one left-to-right
+  pass. Reviewing asks a narrower question ("what is wrong with this?") about text the model can now see all at
+  once. Same model, different conditioning, different strengths. This is the generator–verifier gap (idea 3) in its
+  cheapest form.
+- *Its limits.* The reviewer shares the writer's knowledge and blind spots, and models tend to rate text that looks
+  like their own output kindly (*self-preference bias*). Most of the gain comes in the first revision. Later ones
+  often just churn, or drift away from the original request.
+- *Feedback quality decides everything.* "Make it better" produces change, not improvement. Feedback that names a
+  specific defect ("the second sentence repeats the first") gives the writer something to act on.
+- *The cap turns an open loop into a known cost.* Here the worst case is two drafts and two reviews. Without the
+  cap, the worst case is unbounded.
 
 **What to look for.** The log has one `writer: produced draft #n` line per draft and the reviewer's feedback after
 each draft, then the final draft. Note that the limit, not the model, guarantees the loop ends.
@@ -255,6 +358,19 @@ START → reason ─┬─ Final Answer / step limit → END
            └──── Observation ──┘
 ```
 
+**Going deeper.**
+- *Why interleave thinking and acting.* Reasoning alone (chain of thought) works from memory and can build a chain
+  on an invented fact. Acting alone has no plan. Interleaving grounds each next thought in a real observation, so
+  the environment corrects the model's mistakes as it goes.
+- *The transcript is the agent's whole state.* There is no hidden memory: what the model saw at each step is
+  exactly the prompt. Save it and you can replay any decision. That property is worth keeping in any agent you build.
+- *Why the model invents observations.* It has seen many Thought/Action/Observation transcripts, and after an
+  Action the most likely next text is an Observation, so it writes one. `truncateAtObservation` cuts it off. Real
+  frameworks pass a *stop sequence* (`"Observation:"`) so the server stops generating at that point.
+- *Cost grows quadratically.* Step *k* resends the *k − 1* steps before it, so a run of *n* steps sends roughly
+  *n²/2* steps' worth of prompt. Doubling the step limit roughly quadruples the prompt tokens. This is why
+  `MAX_STEPS` matters for cost and not only for termination, and why chapter 31 adds a token budget.
+
 **What to look for.** The printed transcript is the Thought/Action/Observation part of what the model saw on each
 step; the prompt adds the instructions, the tool list and the question above it. This is the best place in the
 repository to build an intuition for how agents "think".
@@ -290,6 +406,18 @@ START → outline → gate ─┬─ valid → draft → polish → END
                         └─ invalid, limit → END
 ```
 
+**Going deeper.**
+- *Why small steps beat one big prompt.* Each call has one goal, so instructions don't compete for the model's
+  attention. Each intermediate result can be inspected and checked. Each step can also use its own temperature or
+  model: low for the outline, higher for the prose.
+- *What it costs.* Latency adds up, because the steps run one after another. Information can also get lost: a later
+  step sees only what you pass it. If `polish` needs the original request, it has to be in `polish`'s prompt.
+- *Gates catch errors where they are cheapest.* A bad outline caught by the gate costs one retry. Caught by a human
+  after `polish`, it costs the whole run. This is idea 4, compounding errors, applied directly.
+- *Why the retry prompt says what was wrong.* At low temperature the same prompt gives nearly the same reply, so a
+  blind retry mostly reproduces the failure. Adding the error changes the input, which is the only thing that
+  changes the output.
+
 **What to look for.** The log lines `outline: attempt 1, 3 point(s)`, `draft: written`, `polish: done`.
 
 **Try this.**
@@ -319,6 +447,20 @@ or its own tools). Routing beats one do-everything prompt because each specialis
 START → classify ─┼─ technical ┼→ END
                   └─ general ──┘
 ```
+
+**Going deeper.**
+- *Classification is the easiest job you can give a model.* The answer is one label from a short, closed list.
+  Small, cheap models do it well, and that is where routing saves the most money: classify with a small model, then
+  spend a big one only where it is needed. A classic text classifier or an embedding nearest-neighbour lookup can
+  also do this job deterministically with no generation at all.
+- *Why specialists win.* A do-everything prompt grows long and its rules start to conflict ("be brief", "explain
+  in detail"). A specialist prompt is short and coherent. Each route can also get only *its* tools, which is least
+  privilege per route: a billing question can never reach a tool that changes server settings.
+- *Why "exactly one label".* A naive `contains` check on "technical, not billing" matches whichever label it tests
+  first. Requiring exactly one known label turns ambiguity into the default route instead of a coin toss.
+- *Choose the default for when it's wrong.* Misroutes are certain to happen, so make the default the route that does
+  the least harm when it's wrong. A general assistant that can answer anything a little is a safer default than any
+  specialist.
 
 **What to look for.** Three demo queries, each printed with its route and its answer.
 
@@ -351,6 +493,18 @@ START → orchestrator → worker ─┬─ subtasks left → worker
                                 └─ all done → synthesizer → END
 ```
 
+**Going deeper.**
+- *Open loop versus closed loop.* The orchestrator plans once and never looks back. That is *open-loop* control,
+  like a toaster timer. Chapter 18 adds feedback: it replans after each step, which is *closed-loop* control, like a
+  thermostat. Open loop is cheaper and predictable. Closed loop copes with surprises.
+- *The plan bounds the result.* Workers can't fix a bad decomposition. Overlapping subtasks produce duplicated
+  work that the synthesizer then has to reconcile. A missing subtask leaves a hole nobody notices. Most of the
+  quality comes from the planning prompt.
+- *Why isolated workers.* Each worker sees only its subtask. Prompts stay small, workers can't distract each other,
+  and they could run in parallel (21) or on different models.
+- *The cost is easy to predict.* One plan, *n* workers and one synthesis: *n + 2* calls, with *n* capped at
+  `MAX_SUBTASKS`.
+
 **What to look for.** The numbered list "subtask → result", then the combined report.
 
 **Try this.**
@@ -374,6 +528,18 @@ always returns to the supervisor, so the order is decided at run time, not fixed
   "NEXT: the writer" and "**NEXT:** writer" both work. Anything else means finish.
 - `MAX_TURNS` (6) stops a supervisor that never finishes.
 - `WORK` keeps every contribution as "agent: output", duplicates included.
+
+**Going deeper.**
+- *A supervisor is routing in a loop.* Each supervisor turn is chapter 6 again: classify the situation and choose a
+  specialist. The difference is that the input is a growing scratchpad, and the route can be "done".
+- *The "agents" are one model wearing different hats.* Each one is the same LLM with a different persona prompt.
+  Multi-agent design is mostly about *separating instructions and context*, not about different minds. That's why
+  one agent with tools is often enough.
+- *The shared scratchpad has a price.* Every agent sees everything, which helps collaboration but makes prompts
+  grow every turn. It also spreads mistakes and injected text: one agent's bad output reaches all the others.
+  The supervisor's choices tend to get worse as the scratchpad grows.
+- *Count the calls.* Each agent turn costs two calls, one for the supervisor and one for the agent. A handoff design
+  (27) saves the supervisor's call at the cost of losing the global view.
 
 **What to look for.** The scratchpad: researcher facts, the writer's draft, the critic's "LGTM". Then the turn
 count (4) and the answer, which is the writer's latest draft.
@@ -409,6 +575,18 @@ START → propose → ⏸ human_review ─┬─ approved → execute → END
                                   └─ rejected → cancel ──→ END
 ```
 
+**Going deeper.**
+- *Approve before, not after.* Approval after an action is an audit, not a control. The interrupt has to sit
+  *before* the node with the side effect.
+- *Pausing makes the run durable.* The checkpointer saves the whole state at the pause, so in principle the process
+  could exit and a different one could resume tomorrow. Time travel (23) uses the same mechanism.
+- *Bind the approval to what was shown.* If the proposal can change between "shown" and "executed", the approval
+  covers something the person never saw. This is a *time-of-check to time-of-use* bug. A hash of the proposal,
+  stored with the approval and checked before `execute`, closes it.
+- *Approval fatigue.* If every step asks for approval, people stop reading and click yes. Gate only the irreversible
+  or outward-facing actions, and show exactly what will happen ("send this email to these 3 people"), not the
+  model's reasoning.
+
 **What to look for.** "Approve? [y/N]". Answer `y`, `n`, or press Ctrl-D, which counts as a rejection.
 
 **Try this.**
@@ -438,6 +616,19 @@ object, and *validate* it. When validation fails, send the exact error back and 
   it would have nothing to fix from. It also adds the error and the bad reply.
 - `MAX_ATTEMPTS` is 3.
 
+**Going deeper.**
+- *Why models break JSON.* The model writes one token at a time with no parser checking it. Its training is full of
+  chat answers that wrap code in fences and add a friendly sentence. Long, nested output gives it more chances to
+  slip on a quote or a comma.
+- *Constrained decoding.* Ollama's JSON-schema mode masks, at every step, the tokens that would make the output
+  invalid. The output is then well-formed, unless the token limit cuts the reply off mid-object. It still can't make the *values* right. Forcing the format from
+  the first token can also cut short the model's reasoning, which is why some designs let it think in prose first
+  and emit JSON last.
+- *Why strict parsing.* Lenient coercion (`"5"` → 5, 4.9 → 4) hides the fact that the model was confused. Failing
+  loudly and asking for a repair surfaces it, and the precise error message gives the repair a target.
+- *The schema is a contract.* Everything after the parser can trust the record's types and ranges. Validation is the
+  boundary where untrusted model text becomes trusted data.
+
 **What to look for.** Attempt 1 has `"rating": 8`. Attempt 2 is the corrected JSON, followed by the parsed record.
 
 **Try this.**
@@ -459,6 +650,19 @@ into a running summary.
 - When a fifth arrives, the two oldest are folded into the summary by an LLM call ("keep every fact the user
   stated"), and the summary is capped in code at `MAX_SUMMARY_CHARS` (600).
 - Each prompt is: instructions, summary, recent turns, then the new message.
+
+**Going deeper.**
+- *A three-way trade-off.* Fidelity, cost and conversation length can't all be maximised. Keeping everything
+  verbatim is faithful but grows without bound. Summarising is bounded but lossy.
+- *Summaries lose the wrong things.* The summarising call decides what matters *now*, without knowing what will
+  matter later. Exact names, numbers and dates are the first things to blur. Summaries of summaries drift further
+  with each pass. That's why the prompt says "keep every fact the user stated".
+- *Alternatives.* Instead of compressing the past, you can store it and *retrieve* the relevant turns for each new
+  message. This is RAG over the conversation, the idea behind chapter 17. Real assistants often combine a window,
+  a summary and retrieval.
+- *Stable prefixes are cheaper.* Many model servers cache the work done on a prompt's beginning. A prompt that
+  starts with the same instructions every time lets that cache be reused, while one that rewrites its opening each
+  turn throws it away.
 
 **What to look for.** By the fifth message, "I'm Priya" has left the recent turns and only the summary still holds
 it. The final answer works only because the summary kept the name.
@@ -484,6 +688,22 @@ without retraining.
   document can't close its tag, with instructions to cite `[doc-id]` and a fixed refusal sentence.
 - If retrieval finds nothing, the agent answers "I don't know" **without calling the model**, the cheapest defence
   against a confident made-up answer.
+
+**Going deeper.**
+- *Why grounding works.* Models are much better at reading comprehension (answering from text in front of them)
+  than at recall (answering from training). RAG turns a recall problem into a reading problem. Knowledge moves
+  from the weights, which are fixed and uncitable, into the prompt, which is fresh and checkable.
+- *What TF-IDF measures.* A word's weight is how often it appears in this document (*term frequency*) times how rare
+  it is across all documents (*inverse document frequency*). `KeywordRetriever` uses a smoothed form,
+  log(1 + total documents ÷ documents containing the word), so a word found in every document counts almost
+  nothing, while "laptops", found in one handbook document, counts a lot.
+- *Three ways RAG fails.* The right document isn't retrieved, so the model refuses or makes something up. The wrong
+  one is retrieved, so the answer is confidently wrong *and comes with a citation*. Or the right document conflicts
+  with what the model learned in training, and the model sides with its training. Only the first is visible
+  without reading the answer against its sources.
+- *"Answer only from the documents" is a request, not a guarantee.* The model can still blend in what it already
+  knows. Citations make that checkable: an answer whose cited document doesn't say what the answer claims has
+  failed.
 
 **What to look for.** "Retrieved: [leave-policy (0.56), ...]" and the citation in the answer. The wifi-password
 question retrieves nothing and is refused.
@@ -513,6 +733,21 @@ a call. *Output* guardrails inspect the reply before the user sees it.
 - **Output checks:** email addresses and phone numbers (9 or more digits, so dates survive) are redacted. A reply
   containing the system prompt's marker is blocked.
 
+**Going deeper.**
+- *Why patterns can't win.* Language is open-ended. Any blocklist has a paraphrase, a translation, an encoding
+  (base64, leetspeak) or a split across two messages that slips past it. And the model reads instructions and data
+  through one channel, so no amount of input filtering creates a hard boundary between them.
+- *What guardrails are good for.* They cheaply stop obvious abuse and accidents, and they are one layer of
+  *defence in depth*. Output checks are the sturdier layer, because they look at what actually leaves the system,
+  however the model was tricked into producing it.
+- *Why normalise first.* Attackers use look-alike Unicode characters and invisible zero-width characters to break up
+  keywords. NFKC normalisation folds compatibility look-alikes (fullwidth letters, ligatures) into plain ones, and
+  stripping invisible characters rejoins the words, so the patterns see closer to what a human reader sees.
+  Look-alikes from other scripts, such as Cyrillic "а" for Latin "a", need a separate confusables check.
+- *Two error rates.* Every guardrail blocks some good requests (false positives) and lets some bad ones through
+  (false negatives). Tightening one loosens the other. Measure both on real traffic, because a guardrail that blocks
+  legitimate users is a bug too.
+
 **What to look for.** Four requests: allowed, allowed with redactions, blocked as an injection, blocked as a topic.
 Each request after the first shows the rules that fired.
 
@@ -537,6 +772,20 @@ doubles as a cheap confidence score.
   `vote` picks the most common answer, breaking ties alphabetically.
 - A deadline (`SAMPLE_TIMEOUT`, 3 minutes for all samples together) bounds the wait. A sample that fails or is late
   is cancelled and *abstains* instead of sinking the whole vote.
+
+**Going deeper.**
+- *The maths of voting.* If each sample is right with probability 0.6 and the samples are independent, a majority
+  of 5 is right about 68% of the time, and more samples push that higher (the *Condorcet jury theorem*). In practice
+  it does even better, because wrong answers tend to scatter across many different values while right answers agree.
+- *The catch is independence.* The samples come from the same model with the same prompt. A shared misconception
+  produces the *same* wrong answer every time, and voting turns that into a confident, unanimous wrong answer.
+  Voting removes random slips, not systematic errors.
+- *Temperature is the diversity knob.* At temperature 0 all samples are identical and you pay N times for one
+  answer. Too high, and samples become noise. Moderate temperatures give real variation in reasoning paths.
+- *It needs comparable answers.* Voting works for short answers that can be normalised (a number, a label, a name).
+  Free-form text needs a similarity measure or a judge to group answers first.
+- *Agreement is a better confidence signal than asking.* A model asked "how sure are you?" is poorly calibrated
+  (see chapter 30). The fraction of samples that agree is measured, not claimed.
 
 **What to look for.** "Answer: 4 (4 of 5 samples agree, 80%)". The placeholder deliberately makes one sample slip.
 
@@ -575,6 +824,25 @@ close together, and searches by vector distance. Two extra steps make it work in
 **Watch the score scale.** LangChain4j store scores are *relevance* scores, `(cosine + 1) / 2`. A score of 0.5 means
 unrelated, not "half relevant", so useful thresholds sit above 0.5.
 
+**Going deeper.**
+- *What an embedding model learned.* It was trained on pairs of related texts (a question and its answer, a title and
+  its article) to put related texts close together and unrelated ones far apart. Cosine similarity measures the
+  angle between two vectors, so it compares direction (topic) rather than length.
+- *Why two stages.* Vector search is a *bi-encoder*: question and chunk are embedded separately, so chunk vectors can
+  be computed once and searched quickly. A reranker is a *cross-encoder*: it reads question and chunk together,
+  which is far more accurate but costs a call per pair. Fetch broadly with the fast stage, then judge carefully with
+  the slow one.
+- *Where embeddings fail.* Exact identifiers such as error codes, product names and version numbers carry little
+  meaning, so embeddings blur them. Keyword search catches them. Production systems usually run both (*hybrid
+  search*) and merge the rankings.
+- *Chunking is a precision trade.* Small chunks match precisely but lose surrounding context. Large chunks keep
+  context but dilute the match. Overlap keeps a fact that straddles a boundary from being cut in half.
+- *Why rewrite the query.* Questions and documents are written in different styles. Rewriting moves the query toward
+  the documents' language. *HyDE* (Gao et al., 2022) goes further and embeds a hypothetical answer instead of the
+  question.
+- *One embedding model per index.* Query and documents must be embedded by the same model. Switching models means
+  re-embedding every document.
+
 **What to look for.** For each question: the rewritten query, the chunks kept (each with its vector and rerank
 scores), and the answer. The leave question keeps `leave-policy (vector 0.88, rerank 9)`. The football question keeps
 nothing and gets "I don't know".
@@ -612,6 +880,20 @@ START → retrieve → grade ─┬─ some relevant ────────→
                           └─ none, no rewrites left → give_up → END
 ```
 
+**Going deeper.**
+- *Retrieval as a feedback loop.* Plain RAG is open loop (chapter 7's term): it retrieves once and trusts the result.
+  CRAG closes the loop by checking the retrieval and acting on the check. Most of the gain comes from *noticing* bad
+  retrieval, not from any clever retry.
+- *Small decisions beat big ones.* Grading splits "did we find relevant text?" from "answer the question". Each is a
+  simpler judgement, and a yes/no answer is more reliable from a small model than a score.
+- *Grader strictness is a precision/recall trade.* A strict grader rejects useful chunks and causes needless
+  rewrites and give-ups. A lenient one lets noise into the answer. Tune it with the evaluation harness (29), not by
+  feel.
+- *Rewriting can't create knowledge.* If the documents don't contain the answer, no query finds it. The rewrite
+  limit and the honest `give_up` path matter as much as the rewrite itself.
+- *The next step is agentic RAG.* The model decides *whether* to retrieve, *what* to search for and *when it has
+  enough*, using retrieval as a tool in a ReAct loop (4).
+
 **What to look for.** The step log. "Does my PTO roll forward?" retrieves 0 chunks, is rewritten to "unused paid
 leave days carry over next year", retrieves 3, 1 of which is graded relevant, and is answered with a citation. "What's
 the dress code?" is rewritten twice, never finds anything, and gives up.
@@ -646,6 +928,18 @@ facts that relate to the new message. This is how assistants "remember you".
   number that passes the Luhn check, and an API-key prefix (`AKIA`, `sk-`, `ghp_`);
 - the user can erase facts with "forget <phrase>", which runs without a model call;
 - the demo keeps its file in a private temp directory, and `AGENT_MEMORY_FILE` keeps memory between runs.
+
+**Going deeper.**
+- *Three kinds of memory.* Agent research borrows from cognitive science (for example CoALA, Sumers et al., 2023):
+  *episodic* memory holds what happened, *semantic* memory holds facts ("is vegetarian"), and *procedural* memory
+  holds how to act (in CoALA, the agent's code and the model's weights). This sample keeps semantic memory.
+- *Writing is the hard part.* Deciding what is worth keeping, noticing when a new fact contradicts an old one, and
+  letting stale facts expire are all harder than recall. Most memory bugs are write bugs.
+- *Similar is not the same as relevant.* Recall finds facts whose *wording* is close to the message. "What should I
+  cook tonight?" needs the diet fact, but the two share few words, and only a good embedding model bridges that.
+  Some systems ask the model which memories matter instead of trusting similarity alone.
+- *Poisoning persists.* A prompt injection in one conversation affects one answer. An injection stored as memory
+  affects every later session. That is why the sample filters on the *write* side, which is where the risk enters.
 
 **What to look for.**
 - Session 1 stores two facts, refuses the password message, and forgets "learning Java agents".
@@ -689,6 +983,17 @@ START → planner → executor → replanner ─┬─ FINAL: answer → END
                                         └─ plan empty / step limit → finish → END
 ```
 
+**Going deeper.**
+- *Why plan at all.* ReAct (4) decides one step at a time and never looks ahead. An explicit plan gives lookahead,
+  something a person can review *before* anything runs, and a commitment the next steps can be held to.
+- *Replanning is a feedback controller.* After each step the replanner compares where things are with where they
+  should be and corrects course. It costs a call per step, which is chapter 7's open-loop/closed-loop trade made
+  concrete.
+- *A cheaper variant.* Replan only when a step's result is surprising, and otherwise follow the existing plan. That
+  saves most of the replanning calls when the plan is good.
+- *Plan drift.* Over several rewrites a model can quietly drop part of the goal. Repeating the original goal in
+  every replan prompt, as this sample does, anchors it.
+
 **What to look for.**
 - Plan v1 books "Steak Corner".
 - The first step finds that two people are vegan.
@@ -725,6 +1030,19 @@ START → attempt → check ─┬─ passed / attempt limit → END
            └──────────────────────────────────┘
 ```
 
+**Going deeper.**
+- *Learning without training.* The paper calls this *verbal reinforcement learning*. No weights change: the lesson
+  text is what is learned, and it lives in the prompt. It is cheap and readable, but it is limited by how much fits
+  in context and by how well the model follows its own advice.
+- *Why lessons beat raw errors.* "15 is divisible by 3" fixes one attempt. "Check each number for small divisors"
+  fixes a class of mistakes and carries over to a new task. The reflection step turns a specific error into a
+  general rule.
+- *Why the judge must be objective.* If the model grades itself, it can accept a wrong answer, or "learn" a wrong
+  lesson from a right one. Then the loop makes things worse with confidence. Reflexion's reported gains are
+  largest where tests or environments give real feedback.
+- *Lessons need housekeeping.* They accumulate, they can contradict each other, and they can over-fit one task.
+  Treat them like stored memory (17): cap them, merge them, and retire ones that stop helping.
+
 **What to look for.**
 - Attempt 1 includes 15 ("15 is not prime").
 - Attempt 2 has right numbers in the wrong order.
@@ -753,6 +1071,19 @@ move generator and the evaluator.
   the same numbers, reached by different paths, are rated once.
 - **Select.** The best `BEAM_WIDTH` (2) positions go on to the next depth. After three steps one number is left, and
   code checks whether it is 24.
+
+**Going deeper.**
+- *It is classic search with a model inside.* The states are partial solutions, proposing is the move generator,
+  and rating is the heuristic. Beam search with width 1 is ordinary chain of thought. Wider beams, breadth-first or
+  depth-first search with backtracking are all options.
+- *What search adds.* A model writing left to right can't take back a bad early step. Search keeps alternatives
+  alive, so a mistake at depth 1 doesn't doom the whole attempt.
+- *The ratings are fallible.* A mis-rated position can prune the branch that held the answer. Beam width is
+  insurance against rating errors: wider is more robust and more expensive.
+- *Merging equal positions saves calls.* Different move orders often reach the same numbers (`10 - 4` then `13 - 9`,
+  or the reverse). Rating each distinct position once removes those repeats.
+- *Where it pays.* Search pays off when a cheap, exact verifier exists to check the end result (here, "is it 24?").
+  Without one, you are searching on the model's opinion all the way down.
 
 **What to look for.** One trace line per depth, showing how many steps survived verification and which positions were
 kept with their scores, then the solution: `10 - 4 = 6`, `13 - 9 = 4`, `4 * 6 = 24` (the first two in either order).
@@ -789,6 +1120,17 @@ seconds instead of 6.
   START ─┼─ skeptic ───┼─→ judge → END
          └─ economist ─┘
 ```
+
+**Going deeper.**
+- *Latency is the critical path.* A run takes as long as its longest chain of dependent steps, not the sum of all
+  steps. Fan-out shortens the chain. It doesn't reduce the work.
+- *The server sets the real limit.* A local Ollama box handles only a few requests at once (`OLLAMA_NUM_PARALLEL`)
+  and queues the rest. Ten parallel branches on a server that runs two at a time take five rounds, not one.
+- *Merging is defined by reducers.* Two branches writing the same plain key would race, and the last write would
+  win. An appender channel defines how concurrent updates combine. That is the same problem as a shared variable
+  in threaded code, solved by declaring the merge rule up front.
+- *Independence improves quality.* The analysts don't see each other's views, so none of them anchors on another.
+  Compare debate (28), where seeing the other side is the point.
 
 **What to look for.** The three views and the verdict, then the two timings: the default run takes about four call
 times (three branches plus the judge), the parallel run about two.
@@ -827,6 +1169,15 @@ If you must use a compiled subgraph, give it keys the parent never writes, or us
 `Channels.appender` on shared lists. That plain appender also drops legitimate repeats, so it is a fallback, not the
 default.
 
+**Going deeper.**
+- *Subgraphs are functions for graphs.* They bring encapsulation (the parent sees one step), reuse (one research
+  graph, several parents) and testing in isolation. The state keys a subgraph reads and writes are its parameters
+  and return value.
+- *Inlined versus compiled is like macro versus call.* Inlining pastes the nodes into the parent, so they behave
+  exactly like the parent's own. A compiled subgraph runs separately and hands back a whole state to merge. The
+  duplication bug comes from merge rules: an appender applied to a state that *already* contains the parent's
+  entries appends them again.
+
 **What to look for.** The `[report]` lines (outline, write) and the `[research]` lines (two gather rounds and
 summarize), each printed once, then the notes and the report.
 
@@ -862,6 +1213,17 @@ Use this to debug "why did it do that?", to retry from just before a bad step, o
   the step you forked from would be gone and could no longer be replayed. The first version of this sample made
   exactly that mistake.
 
+**Going deeper.**
+- *A checkpoint per step is an event log.* Like event sourcing in databases, the saved history lets you inspect any
+  past state, re-run from it, or branch from it, without touching what happened.
+- *Replay isn't deterministic by default.* Re-running a node calls the model again, and a real model may answer
+  differently. For exact reproduction, record the model's replies and replay *those*. The placeholder here is
+  deterministic, which hides the difference.
+- *Debugging by bisection.* When a long run ends badly, inspect the state halfway through. If it already looks
+  wrong there, the fault is earlier; if not, it is later. A few looks find the node where things went wrong.
+- *Fixing state beats restarting.* Forking with corrected state keeps all the work before the bad step. That is how
+  a human operator can steer an agent mid-run.
+
 **What to look for.**
 - The history: `__START__`, `draft`, `polish`.
 - The replay gives the same tagline, because the placeholder is deterministic. A real model would likely vary.
@@ -891,6 +1253,16 @@ The first words appear in well under a second, so the wait feels much shorter.
   - With the placeholder, `StreamingLlm.fromReplies` splits a canned reply into words.
   - With Ollama, `OllamaStreamingLlm` wraps LangChain4j's `OllamaStreamingChatModel`. Its callbacks arrive on another
     thread, so the adapter waits for the final one (at most 2 minutes) and turns an error callback into an exception.
+
+**Going deeper.**
+- *Perceived speed is time to first token.* Users judge responsiveness by how soon something appears, not by when
+  the answer is complete. Generation is sequential anyway (see chapter 1), so streaming changes what the user sees
+  without making anything slower.
+- *Callbacks arrive on another thread.* The model client delivers tokens on its own thread, so the adapter needs
+  safe hand-off and a bounded wait for the final callback. If the consumer goes away, cancel the generation.
+  Otherwise the server keeps writing a reply nobody will read.
+- *Shown text can't be taken back.* That is the tension with output guardrails (13): you can stream fast or check
+  first, not both. Buffering per sentence is a common compromise.
 
 **What to look for.**
 - `[event] plan finished`, then the answer printed piece by piece, then `[event] answer finished (201 chars)`.
@@ -941,6 +1313,17 @@ them as untrusted:
 LangChain4j throws `McpApplicationErrorException` when a tool reports an error. The agent catches it and gives the
 error to the model as a result, so the model can try again instead of the run crashing.
 
+**Going deeper.**
+- *Why a protocol.* Without a standard, *N* agents and *M* tools need *N × M* integrations. With one, each side
+  implements it once: *N + M*. MCP plays the same role for tools that HTTP plays for web pages. Under the hood it is
+  JSON-RPC messages over stdio or HTTP.
+- *A tool description is code that runs in the model's head.* The model follows text in its context, so a malicious
+  description can steer it as effectively as malicious code steers a program. Pinning descriptions is the agent's
+  version of a lockfile: you approve exact content, and any change is a visible diff.
+- *The lethal trifecta.* An agent that has access to private data, reads untrusted content and can communicate
+  outward can be made to leak that data. Simon Willison named this combination. Many MCP setups have all three, so
+  remove at least one leg for any agent you deploy.
+
 **What to look for.** "Server offers: [capital_of, celsius_to_fahrenheit]", then two `CALL ... → result` lines (Tokyo,
 86.0), then the answer.
 
@@ -966,6 +1349,16 @@ question show the model only the few most relevant tools.
 - The model sees only those three and replies `CALL tool(input)` or `NONE`. Code runs the tool **only if it was one of
   the three shown**, so a tool name the model remembers or invents is refused. Bad input becomes an error message,
   not a crash.
+
+**Going deeper.**
+- *Why many tools hurt.* Every tool description is paid for on every call, and the model's choice gets less accurate
+  as near-duplicate options pile up. Retrieval turns a prompt that grows with the catalog into one that stays at *k*
+  tools.
+- *The new failure is recall.* If retrieval doesn't surface the right tool, the model can't use it, and it may pick
+  the closest wrong one. Common mitigations: a larger *k*, hybrid keyword and vector search, a few core tools that
+  are always shown, or a "search tools" tool so the model can ask for more.
+- *Showing is permission.* Allowing only the shown tools gives each request the smallest toolset that fits it, which
+  is least privilege decided per request.
 
 **What to look for.** For each question: the three tools shown (the right one first), the call, and the result
 (26.22 miles, FRIDAY, true).
@@ -997,6 +1390,17 @@ turn goes back to a central manager:
   - `MAX_HANDOFFS` (3) stops two agents bouncing a user back and forth, ending with an apology and a human follow-up;
   - the user's request is fenced as data, so it can't write its own `HANDOFF:` line.
 
+**Going deeper.**
+- *A state machine the model steers.* Each agent is a state, and a handoff is a transition chosen by the current
+  agent. Routing (6) is a single handoff decided up front; handoffs make that decision at every turn, by whoever
+  holds the conversation.
+- *No one sees the whole picture.* Without a supervisor, nothing notices that billing and tech keep passing the user
+  back and forth, except the code-enforced handoff limit. Loops are the characteristic failure of decentralised
+  designs.
+- *What travels with a handoff is the real design question.* The full history is faithful but long. A summary is
+  short but lossy. Nothing at all forces the user to repeat themselves. Most production designs pass a short summary
+  plus the original request.
+
 **What to look for.** The trail "triage → billing (refund question)", then "billing → tech (...)", then
 "tech: answered", followed by a question that triage answers itself.
 
@@ -1025,6 +1429,18 @@ wrote neither side is less attached to either.
 START → pro → con ─┬─ rounds left → pro
                    └─ done → judge → END
 ```
+
+**Going deeper.**
+- *Why arguing helps.* Each side has to answer the strongest objection to its position, which surfaces points a
+  single answer skips. The judge then *evaluates* arguments rather than *generating* an answer, which is the
+  generator–verifier gap again.
+- *Debate as oversight.* The original proposal (Irving et al., 2018) was about letting a weaker judge supervise
+  stronger models. Khan et al. (2024) found that debate between models helped non-expert judges reach the right
+  answer more often than hearing one side.
+- *Judges have biases.* LLM judges favour the first position shown, longer answers and text that sounds like their
+  own (Zheng et al., 2023). Swapping the order and comparing verdicts is the standard check.
+- *Debaters can converge on the wrong answer.* Models tend to concede to confident pushback (*sycophancy*), so two
+  debaters can talk each other into a shared mistake.
 
 **What to look for.** Four arguments, labelled with their round, then "Winner: CON (...)" with the judge's reason.
 
@@ -1056,6 +1472,19 @@ model, and scores every answer the same way. Then you compare numbers, always on
 - A result where the two scores **disagree** is flagged "← read this one". Those are the cases where the code check is
   too strict, or the judge too lenient. Reading them is how you calibrate both.
 - `main` scores a strong and a weak placeholder candidate on the same dataset.
+
+**Going deeper.**
+- *Evaluation is statistics.* An agent is a random process, so a score is an estimate with error bars. With *n*
+  cases and a pass rate *p*, the standard error is about √(p(1 − p)/n). At 80% on 100 cases that is ±4 points, so
+  roughly ±8 points at 95% confidence. Five cases can show a dramatic failure but can't tell 80% from 90%. Run each
+  case several times, too, because one run of a stochastic system is one sample.
+- *Grade the path, not just the answer.* An agent can reach the right answer by luck, or by calling a tool it
+  shouldn't have. For agents, check the trajectory as well: which tools were called, how many steps it took, what
+  it cost.
+- *Goodhart's law.* Once a score becomes the target, it stops measuring what you wanted. Tuning prompts against a
+  small golden set over-fits to it, so keep a held-out set you rarely look at.
+- *Grow the set from failures.* Each production bug becomes a new case. Over time the golden set captures what
+  actually goes wrong, which no one could have written up front.
 
 **What to look for.** Candidate A: 5/5 on both. Candidate B: the code check gives 2/5 and the judge 3/5. The one
 disagreement is "Twelve", which is right but phrased differently.
@@ -1093,6 +1522,19 @@ disagreement is "Twelve", which is right but phrased differently.
 - **One retry layer.** With Ollama, the models are built with `OllamaConfig.chatModel(name, 0)`, which turns off the
   client's own retries. Otherwise every failure would be retried 3 × 3 times.
 - Separate models per tier come from `CASCADE_SMALL_MODEL`, `CASCADE_LARGE_MODEL` and `CASCADE_FALLBACK_MODEL`.
+
+**Going deeper.**
+- *The cascade's arithmetic.* Expected cost is `small + P(escalate) × large`. With a large model 10 times the price
+  and 20% of questions escalating, that is 1 + 2 = 3 units instead of 10. At 90% escalation it is 1 + 9 = 10: no
+  saving, plus the small model's latency on every question. The escalation rate decides whether a cascade pays.
+- *Self-rated confidence is a weak signal.* Models are poorly calibrated about their own correctness and often
+  report high confidence on wrong answers. Stronger escalation signals are agreement between samples (14), a
+  checker in code (19, 20) or a separate judge (16), or the token probabilities, where the server exposes them.
+- *Retry layers multiply.* Two layers of 3 attempts make up to 9 calls per failure, and three layers make 27. Retries
+  without jitter all fire at once and knock an overloaded server down again (*retry storm*). One layer, full jitter
+  and a total deadline keep retries from making an outage worse.
+- *The next pattern: circuit breakers.* When a model keeps failing, stop calling it for a while and go straight to
+  the fallback. That gives it room to recover and saves every caller a timeout.
 
 **What to look for.**
 - Paris is answered by the small model.
@@ -1133,6 +1575,18 @@ every turn, so a **token budget** also bounds their *cost*.
 - `ObservabilityDemo` wraps the router (chapter 6) to print a call table. It then wraps a runaway supervisor whose
   writer produces long drafts and never finishes, under a 1,500-token budget with replies of at most 300 tokens.
 
+**Going deeper.**
+- *Traces, not just logs.* An agent run is a tree of calls: a request, its graph nodes, each model call and tool
+  call inside them. Recording each as a *span* with a parent lets you see where time and tokens went in one run.
+  OpenTelemetry now has semantic conventions for GenAI spans, so standard tools can display them.
+- *Reservation is a credit-card hold.* Like a hotel authorising your card for the maximum before settling the real
+  bill, the budget holds the worst case before the call and settles afterwards. That is what keeps concurrent calls
+  from overspending together.
+- *Metadata, not content.* Sizes, timings, model names and token counts are enough to find almost every cost and
+  latency problem. Prompt text isn't needed for that, and it is often personal data.
+- *Cost spikes are usually loops.* Remember chapter 4's quadratic growth. A run that hits its step limit costs far
+  more than a typical one, so watch the high percentiles of tokens per request, not just the average.
+
 **What to look for.** The router's table of four calls. The supervisor table grows to about 1,200 tokens, then
 "Outcome: stopped by the budget", before the supervisor's own turn limit is reached. LangGraph4j also logs the
 exception as an ERROR, which is expected.
@@ -1160,6 +1614,18 @@ latency, and it's only safe if "close enough" is set carefully.
 - The cache is bounded twice: at most `MAX_ENTRIES` (100), least recently used evicted first, and a time-to-live, so
   stale answers expire.
 - `main` runs the same three questions at two thresholds.
+
+**Going deeper.**
+- *A semantic cache is approximate.* An exact-match cache never returns a wrong answer; it only misses. A semantic
+  cache trades some correctness for a higher hit rate, and the threshold sets that trade.
+- *The most dangerous near-misses differ in one detail.* "Capital of France" and "capital of Spain" are nearly
+  identical in meaning-space because they differ in a single entity, and that entity is the whole question.
+  Embeddings capture topic well and specifics poorly.
+- *Layer the caches.* Check an exact (normalised-text) cache first, then the semantic one. Exact hits are free and
+  always safe.
+- *Don't confuse it with prompt caching.* Model providers' *prompt caching* reuses computation on an identical prompt
+  prefix. It saves time and money and never changes the answer. A semantic cache skips the model entirely, which is
+  why it can be wrong.
 
 **What to look for.**
 - At threshold 0.90, the reworded France question is a hit and the Spain question is a model call.
@@ -1203,4 +1669,15 @@ latency, and it's only safe if "close enough" is set carefully.
 | **Memory poisoning** | Planting text in an agent's stored memory so it is injected into later prompts |
 | **Grounding** | Making the model answer from supplied sources instead of from memory |
 | **Prompt injection** | Untrusted text (from a user, a document or a tool) that tries to override the instructions |
+| **Context engineering** | Deciding what goes into each prompt, in what order and how it is fenced, and what is left out |
+| **Generator–verifier gap** | Checking an answer is usually easier than producing it, so a generator paired with a checker beats either alone |
+| **Constrained decoding** | Masking invalid tokens during generation so the output always fits a grammar or JSON schema |
+| **Prefill / decode** | The two phases of a model call: reading the prompt in parallel, then writing the reply one token at a time |
+| **Time to first token** | How long before the first piece of a reply appears; what users perceive as speed |
+| **Bi-encoder / cross-encoder** | Embedding query and text separately (fast, searchable) versus reading them together (slow, accurate) |
+| **Hybrid search** | Combining keyword and vector search, so exact identifiers and paraphrases are both found |
+| **Open / closed loop** | Executing a plan without looking back, versus adjusting after each step from what it revealed |
+| **Self-preference bias** | A model judging text that resembles its own output more favourably |
+| **Retry storm** | Many clients or layers retrying at once, turning a brief failure into a sustained overload |
+| **Lethal trifecta** | Private data, untrusted content and outward communication in one agent: enough to leak the data |
 | **Placeholder / fake LLM** | A scripted function returning canned replies, used to run and test samples without a model |
