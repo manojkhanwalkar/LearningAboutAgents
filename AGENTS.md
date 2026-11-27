@@ -61,6 +61,7 @@ src/main/java/com/learning/agents/
   rag/                       # retrieval-augmented generation (keyword, embedding and corrective RAG)
   memory/                    # long-term memory that persists across sessions
   reasoning/                 # plan-and-execute, Reflexion, Tree of Thoughts
+  langgraph/                 # LangGraph4j features: parallel branches, subgraphs, time travel, streaming
 src/test/java/...            # tests mirror main packages
 .claude/skills/              # Claude Code skills (e.g. new-agent-example scaffolds a new sample)
 ```
@@ -73,6 +74,12 @@ src/test/java/...            # tests mirror main packages
 - New samples take their LLM as a `Function<String, String>`, provide a `static ScriptedLlm placeholder()` with canned
   replies, and get it in `main` through `LlmProvider.resolve(placeholder())`, so they run without Ollama by default.
   A placeholder that must vary between calls (e.g. `SelfConsistencyAgent`'s noisy voter) may return a plain thread-safe `Function`.
+- Invoke graphs with `graph.invoke(GraphInput.args(map), config)`; `invoke(Map, RunnableConfig)` is deprecated for removal.
+- Parallel branches run one after another unless the fan-out node has an executor
+  (`RunnableConfig.builder().addParallelNodeExecutor(node, executor)`).
+- A compiled subgraph's whole final state is merged back into the parent, so lists the parent filled before it
+  are appended twice; keys that cross a subgraph boundary use plain `Channels.appender` with unique entries.
+- Checkpoint history (`getStateHistory`) needs `CompileConfig.builder().releaseThread(false)`.
 - Values kept in graph state must be `Serializable` (records of strings and numbers are fine): LangGraph4j copies
   state between nodes with Java serialization and fails at run time on anything else.
 - Accumulating graph-state keys whose entries can legitimately repeat (worker results, agent scratchpads) use

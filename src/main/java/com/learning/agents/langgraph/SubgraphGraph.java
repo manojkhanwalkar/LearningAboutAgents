@@ -2,6 +2,7 @@ package com.learning.agents.langgraph;
 
 import com.learning.agents.llm.LlmProvider;
 import com.learning.agents.llm.ScriptedLlm;
+import com.learning.agents.llm.TextLists;
 import org.bsc.langgraph4j.CompiledGraph;
 import org.bsc.langgraph4j.GraphInput;
 import org.bsc.langgraph4j.GraphStateException;
@@ -51,7 +52,7 @@ public class SubgraphGraph {
                             Already known:
                             %s
                             Outline: %s""".formatted(String.join("\n", state.notes()), state.outline()));
-                    var facts = reply.lines().map(String::strip).filter(line -> !line.isEmpty()).limit(2).toList();
+                    var facts = TextLists.items(reply, 2);
                     return Map.of(ReportState.NOTES, facts, ReportState.ROUNDS, state.rounds() + 1,
                             ReportState.RESEARCH_LOG, "gather round %d: +%d note(s)".formatted(state.rounds() + 1, facts.size()));
                 }))
