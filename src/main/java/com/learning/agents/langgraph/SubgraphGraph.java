@@ -99,6 +99,7 @@ public class SubgraphGraph {
         return state.notes().size() < MIN_NOTES && state.rounds() < MAX_ROUNDS ? "gather" : "summarize";
     }
 
+    /** Runs the report graph once for {@code topic} and returns the final state. */
     static ReportState run(CompiledGraph<ReportState> graph, String topic) {
         return graph.invoke(GraphInput.args(Map.of(ReportState.TOPIC, topic)), RunnableConfig.builder().build()).orElseThrow();
     }
