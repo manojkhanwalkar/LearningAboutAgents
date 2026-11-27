@@ -95,6 +95,7 @@ public class PlanExecuteGraph {
                 .compile();
     }
 
+    /** Routes after replanning: done on an answer, otherwise finish on an empty plan or at the step cap, else execute. */
     static String afterReplan(PlanExecuteState state) {
         if (state.answer().isPresent()) {
             return "done";

@@ -78,6 +78,7 @@ public class ReflexionGraph {
                 .compile();
     }
 
+    /** Routes after the checker: done when the attempt passed or the attempt limit is reached, else reflect. */
     static String afterCheck(ReflexionState state) {
         return state.passed() || state.attempts() >= MAX_ATTEMPTS ? "done" : "reflect";
     }
@@ -127,6 +128,7 @@ public class ReflexionGraph {
         return Optional.empty();
     }
 
+    /** Trial division up to the square root; numbers below 2 are not prime. */
     static boolean isPrime(int n) {
         if (n < 2) {
             return false;
