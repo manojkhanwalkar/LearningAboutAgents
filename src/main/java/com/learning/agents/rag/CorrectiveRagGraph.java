@@ -128,6 +128,7 @@ public class CorrectiveRagGraph {
                 .when("Answer using ONLY", "Yes: up to 5 unused days of leave carry over to next year [leave-policy].");
     }
 
+    /** Answers sample questions (or {@code args}) over the handbook and prints the grading log for each. */
     public static void main(String[] args) throws Exception {
         var retriever = new VectorRetriever(LlmProvider.resolveEmbeddings(new HashingEmbeddingModel()))
                 .index(EmbeddingRagAgent.HANDBOOK);

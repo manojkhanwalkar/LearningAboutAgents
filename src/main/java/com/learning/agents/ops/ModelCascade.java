@@ -230,6 +230,7 @@ public class ModelCascade {
         return ScriptedLlm.create().otherwise("Lobachevsky founded hyperbolic (non-Euclidean) geometry.");
     }
 
+    /** Asks sample questions (or {@code args}) through the cascade and prints each step of the trace and which model answered. */
     public static void main(String[] args) throws Exception {
         String smallName = OllamaConfig.modelName("CASCADE_SMALL_MODEL");
         String largeName = OllamaConfig.modelName("CASCADE_LARGE_MODEL");

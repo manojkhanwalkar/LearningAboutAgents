@@ -38,9 +38,11 @@ public final class FactStore {
 
     private static final ObjectMapper JSON = new ObjectMapper();
 
+    /** A stored fact with its embedding. */
     private record Entry(String text, Embedding embedding) {
     }
 
+    /** A fact with its similarity to a query. */
     private record Scored(String text, double score) {
     }
 
@@ -169,6 +171,7 @@ public final class FactStore {
         return embeddings.embed(TextSegment.from(text)).content();
     }
 
+    /** Writes all facts to the file through a temp file and an atomic move, so a crash never leaves a half-written file; throws {@link UncheckedIOException} on failure. */
     private void save() {
         Path tmp = null;
         try {

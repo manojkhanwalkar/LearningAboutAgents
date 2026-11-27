@@ -205,6 +205,7 @@ public class TreeOfThoughtsAgent {
         return prompt.substring(i, prompt.indexOf('\n', i)).strip();
     }
 
+    /** Solves four numbers from {@code args} (default 4 9 10 13) and prints the search trace and solution, or a usage message for bad input. */
     public static void main(String[] args) {
         List<Integer> numbers = List.of(4, 9, 10, 13);
         if (args.length > 0) {

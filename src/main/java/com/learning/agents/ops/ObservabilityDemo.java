@@ -61,6 +61,7 @@ public class ObservabilityDemo {
         return new BudgetedRun(supervise(observed), observed);
     }
 
+    /** Runs the supervisor graph on the observed model and describes how it ended; a budget overrun anywhere in the cause chain is reported as an outcome, other failures are rethrown. */
     private static String supervise(ObservedLlm observed) throws Exception {
         try {
             SupervisorState result = SupervisorGraph.build(observed)
@@ -78,6 +79,7 @@ public class ObservabilityDemo {
         }
     }
 
+    /** Traces the router graph with no budget, then a runaway supervisor under a small token budget, and prints each trace and outcome. */
     public static void main(String[] args) throws Exception {
         var router = new ObservedLlm(LlmProvider.resolve(routerPlaceholder()), Integer.MAX_VALUE);
         var graph = RouterGraph.build(router);

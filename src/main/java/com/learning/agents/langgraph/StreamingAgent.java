@@ -92,6 +92,7 @@ public class StreamingAgent {
                                 + "That makes slow local models feel much faster.");
     }
 
+    /** Runs the graph on a question (or {@code args}), printing answer tokens as they stream and one event per finished node. */
     public static void main(String[] args) throws Exception {
         String question = args.length > 0 ? String.join(" ", args) : "Why do chat apps stream their answers?";
         ScriptedLlm canned = placeholder();

@@ -100,6 +100,7 @@ public class ConversationMemoryAgent {
                 .otherwise("Got it.");
     }
 
+    /** Runs a scripted conversation (or the one message in {@code args}) and prints each reply with the memory state after it. */
     public static void main(String[] args) {
         var agent = new ConversationMemoryAgent(LlmProvider.resolve(placeholder()));
         var messages = args.length > 0

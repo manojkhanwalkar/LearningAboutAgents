@@ -157,6 +157,7 @@ public class ReflexionGraph {
                 .otherwise("11, 15, 13");
     }
 
+    /** Runs the reflexion loop on its built-in task and prints the attempts, lessons learned and outcome; {@code args} are ignored. */
     public static void main(String[] args) throws Exception {
         // The judge must fit the task: checkPrimes only grades TASK, so this sample doesn't take a task from args.
         if (args.length > 0) {

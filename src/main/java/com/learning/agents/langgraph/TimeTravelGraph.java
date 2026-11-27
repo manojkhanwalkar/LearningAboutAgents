@@ -125,6 +125,7 @@ public class TimeTravelGraph {
                 .when("Polish", "Your notes, always with you.");
     }
 
+    /** Runs the graph once, then prints its checkpoint history, replays from before {@code draft} and forks with a different tone. */
     public static void main(String[] args) throws Exception {
         String product = args.length > 0 ? String.join(" ", args) : "a note-taking app";
         var agent = new TimeTravelGraph(LlmProvider.resolve(placeholder()), "demo");

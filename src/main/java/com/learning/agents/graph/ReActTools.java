@@ -54,6 +54,7 @@ public final class ReActTools {
                 .orElse("No fact found for \"%s\". Known topics: %s".formatted(query, String.join(", ", FACTS.keySet())));
     }
 
+    /** Evaluates one binary expression such as {@code 12 * 3} exactly in decimal; returns an {@code Error: ...} message, never throws, for malformed input, oversized numbers or division by zero. */
     static String calculate(String expression) {
         var m = BINARY_EXPR.matcher(expression);
         if (!m.matches()) {

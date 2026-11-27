@@ -47,9 +47,11 @@ public class ReActAgentGraph {
     sealed interface Step {
         String thought();
 
+        /** The model is done: its last thought and the answer. */
         record FinalAnswer(String thought, String answer) implements Step {
         }
 
+        /** The model wants a tool run: its thought, the tool name and the tool input. */
         record Action(String thought, String tool, String input) implements Step {
         }
     }
@@ -107,6 +109,7 @@ public class ReActAgentGraph {
         return state.answer().isPresent() || state.steps() >= MAX_STEPS ? "finish" : "act";
     }
 
+    /** Builds the model prompt: the tool list, the required reply format, the question and the transcript so far. */
     static String prompt(ReActState state, List<ReActTool> tools) {
         String toolList = tools.stream()
                 .map(t -> "- %s: %s".formatted(t.name(), t.description()))
@@ -137,6 +140,7 @@ public class ReActAgentGraph {
         return (i >= 0 ? reply.substring(0, i) : reply).strip();
     }
 
+    /** Parses a model reply into a {@link Step}; a final answer wins over an action, and a reply with neither becomes an action with a blank tool. */
     static Step parse(String reply) {
         var thought = THOUGHT.matcher(reply);
         String t = thought.find() ? thought.group(1).strip() : "";
@@ -151,6 +155,7 @@ public class ReActAgentGraph {
         return new Step.Action(t, "", "");   // no readable action: the act node answers "Invalid action"
     }
 
+    /** Runs the ReAct agent against Ollama on a question from {@code args} (or a default) and prints the reasoning transcript and answer. */
     public static void main(String[] args) throws Exception {
         ChatModel model = OllamaConfig.chatModel();
         String question = args.length > 0

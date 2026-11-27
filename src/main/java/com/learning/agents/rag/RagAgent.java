@@ -77,6 +77,7 @@ public class RagAgent {
                 .otherwise(NO_ANSWER);
     }
 
+    /** Answers sample questions (or {@code args}) over the handbook and prints the retrieved documents and answer. */
     public static void main(String[] args) {
         var agent = new RagAgent(new KeywordRetriever(HANDBOOK), LlmProvider.resolve(placeholder()));
         var questions = args.length > 0

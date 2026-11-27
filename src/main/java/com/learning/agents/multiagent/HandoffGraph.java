@@ -57,12 +57,15 @@ public class HandoffGraph {
 
     /** A parsed reply: an answer, a handoff to a known agent with a reason, or neither. */
     sealed interface Decision {
+        /** The agent answered directly. */
         record Answer(String text) implements Decision {
         }
 
+        /** The agent passed the request to another agent, with its reason. */
         record Handoff(String target, String reason) implements Decision {
         }
 
+        /** The reply was neither a usable answer nor a handoff. */
         record Unclear() implements Decision {
         }
     }
@@ -153,6 +156,7 @@ public class HandoffGraph {
                         p -> "ANSWER: The login retry bug caused the double charge; it's fixed and billing has refunded you.");
     }
 
+    /** Routes sample requests (or the one in {@code args}) through the handoff graph and prints each handoff trail and answer. */
     public static void main(String[] args) throws Exception {
         var graph = build(LlmProvider.resolve(placeholder()));
         var requests = args.length > 0

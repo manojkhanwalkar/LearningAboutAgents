@@ -72,6 +72,7 @@ public class WriterReviewerGraph {
                 || state.revisions() >= MAX_REVISIONS;
     }
 
+    /** Runs the writer-reviewer loop on a topic from {@code args} (or a default) against Ollama and prints the log and final draft. */
     public static void main(String[] args) throws Exception {
         ChatModel model = OllamaConfig.chatModel();
         String topic = args.length > 0 ? String.join(" ", args) : "why agents need memory";

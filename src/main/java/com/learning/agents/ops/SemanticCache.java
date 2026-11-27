@@ -35,6 +35,7 @@ public final class SemanticCache implements Function<String, String> {
 
     static final int MAX_ENTRIES = 100;
 
+    /** One cached question, its embedding, the answer and when it was stored (for expiry). */
     private record Entry(String question, Embedding embedding, String answer, Instant storedAt) {
     }
 

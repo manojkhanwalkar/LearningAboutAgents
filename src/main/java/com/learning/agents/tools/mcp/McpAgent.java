@@ -189,6 +189,7 @@ public class McpAgent {
                 .otherwise("CALL capital_of {\"country\": \"Japan\"}");
     }
 
+    /** Starts the in-process demo server, connects to it and asks a question (or {@code args}), printing the tool calls and answer. */
     public static void main(String[] args) throws Exception {
         String question = args.length > 0
                 ? String.join(" ", args)

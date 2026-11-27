@@ -161,6 +161,7 @@ public class LongTermMemoryAgent {
                 .otherwise("Noted!");
     }
 
+    /** Runs a demo across two sessions sharing one memory file, to show facts surviving a new agent instance. */
     public static void main(String[] args) throws Exception {
         // By default the memory lives in a fresh private (0700) temp directory, so the demo starts clean and no other
         // local user can plant a file at a predictable path. Set AGENT_MEMORY_FILE to keep memory between runs.

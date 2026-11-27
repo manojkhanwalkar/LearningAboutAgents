@@ -114,6 +114,7 @@ public class OrchestratorWorkersGraph {
                         "Local models trade upfront hardware cost for privacy and no per-token fees.");
     }
 
+    /** Runs the orchestrator on a sample task (or {@code args}) and prints the plan, the worker results and the report. */
     public static void main(String[] args) throws Exception {
         String task = args.length > 0
                 ? String.join(" ", args)

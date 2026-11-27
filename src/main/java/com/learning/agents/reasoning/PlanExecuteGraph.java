@@ -143,6 +143,7 @@ public class PlanExecuteGraph {
                 .otherwise("Partly done; see the steps above.");
     }
 
+    /** Runs plan-and-execute on a goal from {@code args} (or a default) and prints every plan version, the steps and the answer. */
     public static void main(String[] args) throws Exception {
         String goal = args.length > 0 ? String.join(" ", args) : "Organise a team lunch for 8 people this Friday.";
 

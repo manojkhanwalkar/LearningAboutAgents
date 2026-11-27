@@ -150,6 +150,7 @@ public class EmbeddingRagAgent {
                 .otherwise(NO_ANSWER);
     }
 
+    /** Answers sample questions (or {@code args}) over the handbook and prints the search query, kept sources and answer. */
     public static void main(String[] args) {
         var retriever = new VectorRetriever(LlmProvider.resolveEmbeddings(new HashingEmbeddingModel())).index(HANDBOOK);
         var agent = new EmbeddingRagAgent(retriever, LlmProvider.resolve(placeholder()));

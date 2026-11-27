@@ -124,6 +124,7 @@ public class GuardrailsAgent {
                 .otherwise("I only answer cooking questions.");
     }
 
+    /** Sends sample messages (or the one in {@code args}) through the guardrails and prints each reply with its allow or block verdict. */
     public static void main(String[] args) {
         var agent = new GuardrailsAgent(LlmProvider.resolve(placeholder()));
         var messages = args.length > 0
